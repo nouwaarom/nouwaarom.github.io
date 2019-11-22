@@ -1,3 +1,58 @@
----
-layout: feed
----
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <generator uri="http://jekyllrb.com" version="4.0.0">Jekyll</generator>
+  
+  
+  <link href="https://nouwaarom.com/feed.xml" rel="self" type="application/atom+xml" />
+  <link href="https://nouwaarom.com/" rel="alternate" type="text/html" />
+  <updated>2019-11-22T18:07:06+00:00</updated>
+  <id>https://nouwaarom.com//</id>
+
+  
+    <title type="html">Random Stuff I Like</title>
+  
+
+  
+    <subtitle>A site with some stuff I am interested in and like writing about.</subtitle>
+  
+
+  
+
+  
+  
+    <entry>
+      
+      <title type="html">Work in Progress!</title>
+      
+      
+      <link href="https://nouwaarom.com/misc/2019/11/22/welcome.html" rel="alternate" type="text/html" title="Work in Progress!" />
+      
+      <published>2019-11-22T14:40:39+00:00</published>
+      <updated>2019-11-22T14:40:39+00:00</updated>
+      <id>https://nouwaarom.com/misc/2019/11/22/welcome</id>
+      <content type="html" xml:base="https://nouwaarom.com/misc/2019/11/22/welcome.html">&lt;p&gt;This is not a very interesting post yet.&lt;/p&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+
+      
+        <category term="misc" />
+      
+
+      
+
+      
+        <summary type="html">This is not a very interesting post yet.</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+</feed>
