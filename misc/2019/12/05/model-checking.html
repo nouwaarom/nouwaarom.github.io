@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>Model Checking</title>
+  <meta name="description" content="This post is an simple introduction modelchecking. What I write is based on my limited experience with this subject. I apologize in advance if I miss something.">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="/misc/2019/12/05/model-checking.html">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Random Stuff I Like" href="/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="Model Checking">
+  <meta property="og:site_name" content="Random Stuff I Like">
+  <meta property="og:url" content="/misc/2019/12/05/model-checking.html">
+  <meta property="og:description" content="This post is an simple introduction modelchecking. What I write is based on my limited experience with this subject. I apologize in advance if I miss something.">
+  
+  
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:site" content="">
+  <meta name="twitter:title" content="Model Checking">
+  <meta name="twitter:description" content="This post is an simple introduction modelchecking. What I write is based on my limited experience with this subject. I apologize in advance if I miss something.">
+  
+    <meta name="twitter:creator" content="">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css?family=Bitter:400,400i,700&display=swap" rel="stylesheet">
+
+  
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Random Stuff I Like</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/home/">Home</a>
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/nouwaarom">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    
+      <h1 class="post-title" itemprop="name headline">Model Checking</h1>
+    
+    <p class="post-meta"><time datetime="2019-12-05T16:30:00+00:00" itemprop="datePublished">Dec 5, 2019</time> •
+  
+    
+    
+  
+
+
+
+</p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>This post is an simple introduction modelchecking.
+What I write is based on my limited experience with this subject.
+I apologize in advance if I miss something.</p>
+
+<p>The goal of model checking is to verify if the behaviour of a system is as intended.
+This verification is especially usefull for safety-critical systems.
+Here are some examples:
+For the software in a car you want the brake pedal to <em>always</em> make the car brake, you do not want the turning on the radio can effect this behaviour.
+For the traffic lights of an intersection you <em>never</em> want two crossing lanes to have green light at the same time.
+A second intended behaviour of a traffic light system is that every lane will get green <em>eventually</em>.</p>
+
+<p>In order to verify the behaviour of a system we need two things.
+The first thing is a good model of the system.
+The second thing is a good description of the intended behaviour of the system.
+In the next sections we will give a description of what a “good model” and a “good description” of behaviour might be.
+What I will describe is definitely not the only option, or the best option for every system, there are different choices for different types of systems.</p>
+
+<h3 id="models">Models</h3>
+<p>Let us start with defining what a “good model” might be for checking the behaviour of a system.
+A model is a simpler representation of the truth.
+We want a model that is as simple as possible, but not so simple that a problemwith the model does not point to a problem in the real system.
+This makes sense, right?</p>
+
+<p>Let’s take a system and see what we can remove in order to get a simple model that is still usefull.
+If we take the example of a traffic-light system for an intersection.
+The “real” system includes: lights, controllers and the software they run, a lot of wires, vehicle detection sensors, some buttons for the pedestrians.</p>
+
+<p>Now, what information do we need in order to check the behaviour described above (no crossing lanes have green at the same moment, a lanes will eventually get green)?
+For the lights we only care about their state, are they red, orange or green? How they are connected and how bright they are etc. is not important to us.
+We are also not interested in the specifics of the buttons, they can be represented as simple binary input: a car is detected, or it is not; there are pedestrians, or there are no pedestrians.</p>
+
+<p>For the controllers we are not interested in the specific hardware or software they use.
+We are interested in how a controller responds given a certain input and having a certain <em>state</em>.
+The controller has a <em>state</em> that is based on its previous inputs.
+We are not interested in what exactly this state is. e.g. we do not care the values of variables in the controller or where in it’s program it is executing.
+What we are interested in is which states a certain input can be given and in which states a certain output is produced.</p>
+
+<p>So, what are we interested in?
+Given the following crossing:
+<img src="/assets/img/crossing.png" alt="Crossing" width="100%" />
+Where every lane has one light for every direction and a sensor that detects if there is a vehicle in that lane.</p>
+
+<p>And the following control system:</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>car_north = false
+car_east = false
+...
+
+north_light = red
+east_light = red
+west_light = red
+south_light = red
+
+repeat {
+    if (car_north AND east_light=red AND west_light=red AND south_light=red) {
+        north_light = green
+        wait(5s)
+        north_light = orange
+        wait(2s)
+        north_light = red
+    }
+    if (car_east AND ...
+}
+</code></pre></div></div>
+<p>where <code class="highlighter-rouge">car_x</code> is changed by the sensor.</p>
+
+<p>This behaviour might be modeled as:
+The lights are displayed as (north_color, east_color, west_color, south_color).</p>
+
+<ul>
+  <li>state1: (red,red,red,red) transitions to (state2, state4)</li>
+  <li>state2: (green,red,red,red) transitions to (state3)</li>
+  <li>state3: (orange,red,red,red) transitinos to (state4)</li>
+  <li>
+    <p>state4: (red,red,red,red) transitions to (state5)</p>
+  </li>
+  <li>state5: (red,red,red,red) transitions to (state6, state8)</li>
+  <li>state6: (red,green,red,red) transitions to (state7)</li>
+  <li>state7: (red,orange,red,red) transitinos to (state8)</li>
+  <li>state8: (red,red,red,red) transitions to …
+…</li>
+</ul>
+
+<p>This way of describing the system preserves the required information to do analysis of the behaviour of the system but removes all other information.</p>
+
+<h3 id="behaviour">Behaviour</h3>
+<p>This post is already long enough and I don’t want to cause you a headache.
+How to behave will be handled in the next post.</p>
+
+  </div>
+
+  
+
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy;  - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>
