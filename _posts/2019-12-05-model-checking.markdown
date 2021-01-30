@@ -1,20 +1,19 @@
 ---
 layout: post
 title:  "Model Checking"
-date:   2019-12-05 17:30:00 +0100
+date:   2019-12-05
 categories: misc 
 ---
 
-This post is an simple introduction modelchecking.
-What I write is based on my limited experience with this subject.
-I apologize in advance if I miss something.
-
+This post is a simple introduction modelchecking.
 The goal of model checking is to verify if the behaviour of a system is as intended.
 This verification is especially usefull for safety-critical systems.
 Here are some examples:
 For the software in a car you want the brake pedal to *always* make the car brake, you do not want the turning on the radio can effect this behaviour.
 For the traffic lights of an intersection you *never* want two crossing lanes to have green light at the same time.
 A second intended behaviour of a traffic light system is that every lane will get green *eventually*.
+
+<!--more-->
 
 In order to verify the behaviour of a system we need two things.
 The first thing is a good model of the system.
