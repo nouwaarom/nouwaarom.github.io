@@ -28,7 +28,7 @@ twitter_username: ""
 github_username:  nouwaarom
 
 # Build settings
-theme: jekyll-whiteglass
+#theme: jekyll-theme-slate
 plugins:
   - jekyll-feed
 
