@@ -1,0 +1,15 @@
+---
+layout: post
+title:  "Introduction"
+date:   2019-11-22
+categories: misc 
+---
+
+This is a little introduction to who I am.
+I have always been intrigued by technology. When I was in elementary school I was trying to understand how planes and engines worked and then tried to design them myself in paint :).
+
+In highschool I became interested in computers because I started gaming.
+I wanted to write a game myself so I tried to build something in Unity3D.
+In university I studied electrical engineering and embedded systems and learned a lot more about hardware and software design.
+I am currently working as an embedded software engineer, which is a lot of fun.
+
