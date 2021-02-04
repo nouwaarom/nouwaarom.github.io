@@ -33,6 +33,7 @@ plugins:
   - jekyll-feed
 
 excerpt_separator: <!--more-->
+repo: "https://github.com/nouwaarom/nouwaarom.github.io"
 
 # Exclude from processing.
 # The following items will not be processed, by default.
