@@ -1,7 +1,9 @@
 ---
 layout: post
-title:  "WIP: Investigating semihosting"
+title:  "Investigating semihosting"
 date:   2021-01-30
+description: "There are some posts and guides on how to setup semihosting, but almost none really explaning what is going on internally.
+In this post I will dig deeper in to how it works."
 categories: embedded c initialize_monitor_handles
 ---
 
