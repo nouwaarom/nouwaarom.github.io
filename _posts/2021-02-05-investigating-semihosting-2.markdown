@@ -32,7 +32,10 @@ Disassembly of section .text.main:
 ```
 
 Let us look at the source of *puts*.
+
+{% fold_highlight %}
 {% highlight c %}
+//FOLD
 /*
 DESCRIPTION
 <<puts>> writes the string at <[s]> (followed by a newline, instead of
@@ -59,6 +62,7 @@ Supporting OS subroutines required: <<close>>, <<fstat>>, <<isatty>>,
 #include <string.h>
 #include "fvwrite.h"
 #include "local.h"
+//ENDFOLD
 
 /*
  * Write the given string to stdout, appending a newline.
@@ -69,6 +73,7 @@ _puts_r (struct _reent *ptr,
        const char * s)
 {
 #ifdef _FVWRITE_IN_STREAMIO // newlib
+//FOLD
   int result;
   size_t c = strlen (s);
   struct __suio uio;
@@ -91,6 +96,7 @@ _puts_r (struct _reent *ptr,
   result = (__sfvwrite_r (ptr, fp, &uio) ? EOF : '\n');
   _newlib_flockfile_end (fp);
   return result;
+//ENDFOLD
 #else // newlib_nano
   int result = EOF;
   const char *p = s;
@@ -131,10 +137,14 @@ puts (char const * s)
 
 #endif
 {% endhighlight %}
+{% endfold_highlight %}
+
 Let us first look at the preprocessor statements.
 There is a conditional compilation on *_FVWRITE_IN_STREAMIO*.
 With some googeling we find that this flag can be used to disable the io vector buffer. [source](https://sourceware.org/legacy-ml/newlib/2013/msg00146.html) 
 It turns out the buffer is available for newlib but not for newlib nano. 
+
+For the sake of simplicity we will explore the case without a buffer.
 
 
 Thank you for reading. If you have questions or suggestions, please open an issue or mergerequest on the [repository]({{ site.repo }}) for this site.
