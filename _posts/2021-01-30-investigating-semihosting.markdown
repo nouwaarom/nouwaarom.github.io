@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Investigating semihosting"
+title:  "Semihosting: initialize monitor"
 date:   2021-01-30
 description: "There are some posts and guides on how to setup semihosting, but almost none really explaning what is going on internally.
 In this post I will dig deeper in to how it works."
@@ -17,7 +17,7 @@ In this post I will dig deeper in to how it works.
 
 ## A simple example
 We start with an example of how to use semihosting after that we will investigate what is going on.
-Consider the following piece of code (`main.c`), which uses semihosting to print over the debug console.
+Consider the following piece of code (`main.c`). Which uses semihosting to print over the debug console.
 {% highlight c %}
 #include <stdio.h>
 extern void initialise_monitor_handles(void);
@@ -28,7 +28,7 @@ int main() {
     return 0;
 }
 {% endhighlight %}
-In this example I build for a cortex-m33 because that is the architecture I use, but you can change the flags to compile it for other processors.
+In this example I build for a cortex-m33 because that is the architecture I use. You can change the flags to compile it for other processors.
 We can compile this using:
 ```
 $ arm-none-eabi-gcc -nostdlib \
@@ -41,6 +41,7 @@ $ arm-none-eabi-gcc --specs=rdimon.specs -nostartfiles \
 -marm -mcpu=cortex-m33 -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb \
 -lc -lrdimon main.o -o main
 ```
+The important flags for semihosting are: `--specs=rdimon.specs` and `-lrdimon`.
 When you have a debug session using `gdb` you need to execute
 `arm semihosting enable` or `monitor semihosting enable`.
 Depending on the gdb server that you use (JLinkGDBServer, openocd, ...).
