@@ -9,12 +9,12 @@
   
   
   
-  <title>Random Stuff I Like</title>
+  <title>Home</title>
   <meta name="description" content="A site with some stuff I am interested in and like writing about.">
   
 
   <link rel="stylesheet" href="/assets/main.css">
-  <link rel="canonical" href="https://nouwaarom.com/">
+  <link rel="canonical" href="https://nouwaarom.com/home/">
   
   
   <link rel="alternate" type="application/rss+xml" title="Random Stuff I Like" href="https://nouwaarom.com/feed.xml">
@@ -22,15 +22,15 @@
   
 
   
-  <meta property="og:title" content="Random Stuff I Like">
+  <meta property="og:title" content="Home">
   <meta property="og:site_name" content="Random Stuff I Like">
-  <meta property="og:url" content="https://nouwaarom.com/">
+  <meta property="og:url" content="https://nouwaarom.com/home/">
   <meta property="og:description" content="A site with some stuff I am interested in and like writing about.">
   
   
   <meta name="twitter:card" content="summary">
   <meta name="twitter:site" content="">
-  <meta name="twitter:title" content="Random Stuff I Like">
+  <meta name="twitter:title" content="Home">
   <meta name="twitter:description" content="A site with some stuff I am interested in and like writing about.">
   
     <meta name="twitter:creator" content="">
@@ -71,149 +71,38 @@
 
     <main class="page-content" aria-label="Content">
       <div class="wrapper">
-        <div class="home">
+        <article class="post">
+
+  <header class="post-header">
+    <h1 class="post-title">Home</h1>
+  </header>
+
   <div class="post-content">
-  <p>Welcome to this little corner of the internet.
-Here I write about things that are interesting to me and are worth writing about, which is mainly software.
-It is not that I am only interested in software related stuff, but it’s just the theme of this site.</p>
-
-
-  </div>
-
+    <h2 id="posts">Posts</h2>
+<ul>
   
-
-  <ul class="post-list">
-    
-      
-      
-
-      <li>
-        <header class="post-header">
-          <h1 class="post-title">
-            
-              <a class="post-link" href="/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html">WIP: Investigating semihosting (2)</a>
-            
-          </h1>
-
-          <p class="post-meta">
-            Feb 5, 2021
-            
-               •
-  
-    
-    
-  
-    
-    
-  
-    
-    
-  
-    
-    
-  
-
-
-
-
-            
-            
-          </p>
-        </header>
-
-        <div class="post-content">
-          <p>This is part two of a series, part one can be found <a href="/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">here</a>.
+    <li>
+      <a href="/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html">WIP: Investigating semihosting (2) - 05 Feb 2021</a>
+      <p>This is part two of a series, part one can be found <a href="/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">here</a>.
 In this post we will investigate how we can print using semihosting.
 In particular, we will explore how <em>puts</em> works.</p>
 
-        </div>
-        
-          <p class="post-continue">
-            <a href="/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html">Read on &rarr;</a>
-          </p>
-        
-      </li>
-    
-      
-      
-
-      <li>
-        <header class="post-header">
-          <h1 class="post-title">
-            
-              <a class="post-link" href="/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">Investigating semihosting</a>
-            
-          </h1>
-
-          <p class="post-meta">
-            Jan 30, 2021
-            
-               •
+    </li>
   
-    
-    
-  
-    
-    
-  
-    
-    
-  
-
-
-
-
-            
-            
-          </p>
-        </header>
-
-        <div class="post-content">
-          <p>When developing software for ARM microcontrollers there is a big chance that you want to use semihosting.
+    <li>
+      <a href="/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">Investigating semihosting - 30 Jan 2021</a>
+      <p>When developing software for ARM microcontrollers there is a big chance that you want to use semihosting.
 Using semihosting you can send debug messages over SWD of JTAG using the debugger.
 This makes development easier as you do not need an other peripheral.
 I found that setting up semihosting myself was quite confusing.
 If you browse the internet there are some posts and guides on how to setup semihosting, but almost none really explaning what is going on internally.
 In this post I will dig deeper in to how it works.</p>
 
-        </div>
-        
-          <p class="post-continue">
-            <a href="/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">Read on &rarr;</a>
-          </p>
-        
-      </li>
-    
-      
-      
-
-      <li>
-        <header class="post-header">
-          <h1 class="post-title">
-            
-              <a class="post-link" href="/misc/2019/12/05/model-checking.html">Model Checking</a>
-            
-          </h1>
-
-          <p class="post-meta">
-            Dec 5, 2019
-            
-               •
+    </li>
   
-    
-    
-  
-
-
-
-
-            
-            
-          </p>
-        </header>
-
-        <div class="post-content">
-          <p>This post is a simple introduction modelchecking.
+    <li>
+      <a href="/misc/2019/12/05/model-checking.html">Model Checking - 05 Dec 2019</a>
+      <p>This post is a simple introduction modelchecking.
 The goal of model checking is to verify if the behaviour of a system is as intended.
 This verification is especially usefull for safety-critical systems.
 Here are some examples:
@@ -222,44 +111,11 @@ For the traffic lights of an intersection you <em>never</em> want two crossing l
 A second intended behaviour of a traffic light system is that every lane will get green <em>eventually</em>.</p>
 
 
-        </div>
-        
-          <p class="post-continue">
-            <a href="/misc/2019/12/05/model-checking.html">Read on &rarr;</a>
-          </p>
-        
-      </li>
-    
-      
-      
-
-      <li>
-        <header class="post-header">
-          <h1 class="post-title">
-            
-              <a class="post-link" href="/misc/2019/11/22/welcome.html">Introduction</a>
-            
-          </h1>
-
-          <p class="post-meta">
-            Nov 22, 2019
-            
-               •
+    </li>
   
-    
-    
-  
-
-
-
-
-            
-            
-          </p>
-        </header>
-
-        <div class="post-content">
-          <p>This is a little introduction to who I am.
+    <li>
+      <a href="/misc/2019/11/22/welcome.html">Introduction - 22 Nov 2019</a>
+      <p>This is a little introduction to who I am.
 I have always been intrigued by technology. When I was in elementary school I was trying to understand how planes and engines worked and then tried to design them myself in paint :).</p>
 
 <p>In highschool I became interested in computers because I started gaming.
@@ -268,16 +124,16 @@ In university I studied electrical engineering and embedded systems and learned 
 I am currently working as an embedded software engineer, which is a lot of fun.</p>
 
 
-        </div>
-        
-      </li>
-    
-  </ul>
+    </li>
+  
+</ul>
+
+
+  </div>
 
   
 
-
-</div>
+</article>
 
       </div>
     </main>

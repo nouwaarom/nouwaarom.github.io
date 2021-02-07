@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>WIP: Investigating semihosting (2)</title>
+  <meta name="description" content="When using printf() when semihosting the printf function uses semihosting functions to print to the PC console. We will investigate how this works.">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://nouwaarom.com/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Random Stuff I Like" href="https://nouwaarom.com/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="WIP: Investigating semihosting (2)">
+  <meta property="og:site_name" content="Random Stuff I Like">
+  <meta property="og:url" content="https://nouwaarom.com/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html">
+  <meta property="og:description" content="When using printf() when semihosting the printf function uses semihosting functions to print to the PC console. We will investigate how this works.">
+  
+  
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:site" content="">
+  <meta name="twitter:title" content="WIP: Investigating semihosting (2)">
+  <meta name="twitter:description" content="When using printf() when semihosting the printf function uses semihosting functions to print to the PC console. We will investigate how this works.">
+  
+    <meta name="twitter:creator" content="">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Random Stuff I Like</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/nouwaarom">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    
+      <h1 class="post-title" itemprop="name headline">WIP: Investigating semihosting (2)</h1>
+    
+    <p class="post-meta"><time datetime="2021-02-05T00:00:00-06:00" itemprop="datePublished">Feb 5, 2021</time> •
+  
+    
+    
+  
+    
+    
+  
+    
+    
+  
+    
+    
+  
+
+
+
+</p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>This is part two of a series, part one can be found <a href="/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">here</a>.
+In this post we will investigate how we can print using semihosting.
+In particular, we will explore how <em>puts</em> works.
+<!--more--></p>
+
+<h2 id="printing">Printing</h2>
+<p>When we look at the disassembly of main, which can be found by <code class="highlighter-rouge">$ arm-none-eabi-objdump --disassemble main.o</code>.
+We see that the <em>printf</em> has been replaced by a call to <em>puts</em>.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>main.o:     file format elf32-littlearm
+
+Disassembly of section .text.main:
+00000000 &lt;main&gt;:
+   0:	b580      	push	{r7, lr}
+   2:	af00      	add	r7, sp, #0
+   4:	f7ff fffe 	bl	0 &lt;initialise_monitor_handles&gt;
+   8:	4802      	ldr	r0, [pc, #8]	; (14 &lt;main+0x14&gt;)
+   a:	f7ff fffe 	bl	0 &lt;puts&gt;
+   e:	2300      	movs	r3, #0
+  10:	4618      	mov	r0, r3
+  12:	bd80      	pop	{r7, pc}
+  14:	00000000 	.word	0x00000000
+</code></pre></div></div>
+
+<p>Let us look at the source of <em>puts</em>.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><details><summary><span class="c1">...</span></summary>
+<span class="cm">/*
+DESCRIPTION
+&lt;&lt;puts&gt;&gt; writes the string at &lt;[s]&gt; (followed by a newline, instead of
+the trailing null) to the standard output stream.
+
+The alternate function &lt;&lt;_puts_r&gt;&gt; is a reentrant version.  The extra
+argument &lt;[reent]&gt; is a pointer to a reentrancy structure.
+
+RETURNS
+If successful, the result is a nonnegative integer; otherwise, the
+result is &lt;&lt;EOF&gt;&gt;.
+
+PORTABILITY
+ANSI C requires &lt;&lt;puts&gt;&gt;, but does not specify that the result on
+success must be &lt;&lt;0&gt;&gt;; any non-negative value is permitted.
+
+Supporting OS subroutines required: &lt;&lt;close&gt;&gt;, &lt;&lt;fstat&gt;&gt;, &lt;&lt;isatty&gt;&gt;,
+&lt;&lt;lseek&gt;&gt;, &lt;&lt;read&gt;&gt;, &lt;&lt;sbrk&gt;&gt;, &lt;&lt;write&gt;&gt;.
+*/</span>
+
+<span class="cp">#include &lt;_ansi.h&gt;
+#include &lt;reent.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include "fvwrite.h"
+#include "local.h"
+</span></details>
+
+<span class="cm">/*
+ * Write the given string to stdout, appending a newline.
+ */</span>
+
+<span class="kt">int</span>
+<span class="nf">_puts_r</span> <span class="p">(</span><span class="k">struct</span> <span class="n">_reent</span> <span class="o">*</span><span class="n">ptr</span><span class="p">,</span>
+       <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span> <span class="n">s</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="cp">#ifdef _FVWRITE_IN_STREAMIO // newlib
+</span><details><summary><span class="c1">...</span></summary>
+  <span class="kt">int</span> <span class="n">result</span><span class="p">;</span>
+  <span class="kt">size_t</span> <span class="n">c</span> <span class="o">=</span> <span class="n">strlen</span> <span class="p">(</span><span class="n">s</span><span class="p">);</span>
+  <span class="k">struct</span> <span class="n">__suio</span> <span class="n">uio</span><span class="p">;</span>
+  <span class="k">struct</span> <span class="n">__siov</span> <span class="n">iov</span><span class="p">[</span><span class="mi">2</span><span class="p">];</span>
+  <span class="kt">FILE</span> <span class="o">*</span><span class="n">fp</span><span class="p">;</span>
+
+  <span class="n">iov</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="n">iov_base</span> <span class="o">=</span> <span class="n">s</span><span class="p">;</span>
+  <span class="n">iov</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="n">iov_len</span> <span class="o">=</span> <span class="n">c</span><span class="p">;</span>
+  <span class="n">iov</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">iov_base</span> <span class="o">=</span> <span class="s">"</span><span class="se">\n</span><span class="s">"</span><span class="p">;</span>
+  <span class="n">iov</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">iov_len</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+  <span class="n">uio</span><span class="p">.</span><span class="n">uio_resid</span> <span class="o">=</span> <span class="n">c</span> <span class="o">+</span> <span class="mi">1</span><span class="p">;</span>
+  <span class="n">uio</span><span class="p">.</span><span class="n">uio_iov</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">iov</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+  <span class="n">uio</span><span class="p">.</span><span class="n">uio_iovcnt</span> <span class="o">=</span> <span class="mi">2</span><span class="p">;</span>
+
+  <span class="n">_REENT_SMALL_CHECK_INIT</span> <span class="p">(</span><span class="n">ptr</span><span class="p">);</span>
+  <span class="n">fp</span> <span class="o">=</span> <span class="n">_stdout_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">);</span>
+  <span class="n">CHECK_INIT</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">);</span>
+  <span class="n">_newlib_flockfile_start</span> <span class="p">(</span><span class="n">fp</span><span class="p">);</span>
+  <span class="n">ORIENT</span> <span class="p">(</span><span class="n">fp</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">);</span>
+  <span class="n">result</span> <span class="o">=</span> <span class="p">(</span><span class="n">__sfvwrite_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">uio</span><span class="p">)</span> <span class="o">?</span> <span class="n">EOF</span> <span class="o">:</span> <span class="sc">'\n'</span><span class="p">);</span>
+  <span class="n">_newlib_flockfile_end</span> <span class="p">(</span><span class="n">fp</span><span class="p">);</span>
+  <span class="k">return</span> <span class="n">result</span><span class="p">;</span>
+</details>
+<span class="cp">#else // newlib_nano
+</span>  <span class="kt">int</span> <span class="n">result</span> <span class="o">=</span> <span class="n">EOF</span><span class="p">;</span>
+  <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="n">s</span><span class="p">;</span>
+  <span class="kt">FILE</span> <span class="o">*</span><span class="n">fp</span><span class="p">;</span>
+  <span class="n">_REENT_SMALL_CHECK_INIT</span> <span class="p">(</span><span class="n">ptr</span><span class="p">);</span>
+
+  <span class="n">fp</span> <span class="o">=</span> <span class="n">_stdout_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">);</span>
+  <span class="n">CHECK_INIT</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">);</span>
+  <span class="n">_newlib_flockfile_start</span> <span class="p">(</span><span class="n">fp</span><span class="p">);</span>
+  <span class="n">ORIENT</span> <span class="p">(</span><span class="n">fp</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">);</span>
+  <span class="cm">/* Make sure we can write.  */</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">cantwrite</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">))</span>
+    <span class="k">goto</span> <span class="n">err</span><span class="p">;</span>
+
+  <span class="k">while</span> <span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">)</span>
+    <span class="p">{</span>
+      <span class="k">if</span> <span class="p">(</span><span class="n">__sputc_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="o">*</span><span class="n">p</span><span class="o">++</span><span class="p">,</span> <span class="n">fp</span><span class="p">)</span> <span class="o">==</span> <span class="n">EOF</span><span class="p">)</span>
+	<span class="k">goto</span> <span class="n">err</span><span class="p">;</span>
+    <span class="p">}</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">__sputc_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="sc">'\n'</span><span class="p">,</span> <span class="n">fp</span><span class="p">)</span> <span class="o">==</span> <span class="n">EOF</span><span class="p">)</span>
+    <span class="k">goto</span> <span class="n">err</span><span class="p">;</span>
+
+  <span class="n">result</span> <span class="o">=</span> <span class="sc">'\n'</span><span class="p">;</span>
+
+<span class="nl">err:</span>
+  <span class="n">_newlib_flockfile_end</span> <span class="p">(</span><span class="n">fp</span><span class="p">);</span>
+  <span class="k">return</span> <span class="n">result</span><span class="p">;</span>
+<span class="cp">#endif
+</span><span class="p">}</span>
+
+<span class="cp">#ifndef _REENT_ONLY
+</span>
+<span class="kt">int</span>
+<span class="nf">puts</span> <span class="p">(</span><span class="kt">char</span> <span class="k">const</span> <span class="o">*</span> <span class="n">s</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="k">return</span> <span class="n">_puts_r</span> <span class="p">(</span><span class="n">_REENT</span><span class="p">,</span> <span class="n">s</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="cp">#endif</span></code></pre></figure>
+
+<p>Let us first look at the preprocessor statements.
+There is a conditional compilation on <em>_FVWRITE_IN_STREAMIO</em>.
+With some googeling we find that this flag can be used to disable the io vector buffer. <a href="https://sourceware.org/legacy-ml/newlib/2013/msg00146.html">source</a> 
+It turns out the buffer is available for newlib but not for newlib nano.</p>
+
+<p>For the sake of simplicity we will explore the case without a buffer.</p>
+
+<p>Thank you for reading. If you have questions or suggestions, please open an issue or mergerequest on the <a href="https://github.com/nouwaarom/nouwaarom.github.io">repository</a> for this site.</p>
+
+  </div>
+
+  
+
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy;  - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="https://nouwaarom.com/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

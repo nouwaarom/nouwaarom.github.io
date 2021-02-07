@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>Investigating semihosting</title>
+  <meta name="description" content="There are some posts and guides on how to setup semihosting, but almost none really explaning what is going on internally. In this post I will dig deeper in to how it works.">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://nouwaarom.com/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Random Stuff I Like" href="https://nouwaarom.com/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="Investigating semihosting">
+  <meta property="og:site_name" content="Random Stuff I Like">
+  <meta property="og:url" content="https://nouwaarom.com/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">
+  <meta property="og:description" content="There are some posts and guides on how to setup semihosting, but almost none really explaning what is going on internally. In this post I will dig deeper in to how it works.">
+  
+  
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:site" content="">
+  <meta name="twitter:title" content="Investigating semihosting">
+  <meta name="twitter:description" content="There are some posts and guides on how to setup semihosting, but almost none really explaning what is going on internally. In this post I will dig deeper in to how it works.">
+  
+    <meta name="twitter:creator" content="">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Random Stuff I Like</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/nouwaarom">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    
+      <h1 class="post-title" itemprop="name headline">Investigating semihosting</h1>
+    
+    <p class="post-meta"><time datetime="2021-01-30T00:00:00-06:00" itemprop="datePublished">Jan 30, 2021</time> •
+  
+    
+    
+  
+    
+    
+  
+    
+    
+  
+
+
+
+</p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>When developing software for ARM microcontrollers there is a big chance that you want to use semihosting.
+Using semihosting you can send debug messages over SWD of JTAG using the debugger.
+This makes development easier as you do not need an other peripheral.
+I found that setting up semihosting myself was quite confusing.
+If you browse the internet there are some posts and guides on how to setup semihosting, but almost none really explaning what is going on internally.
+In this post I will dig deeper in to how it works.
+<!--more--></p>
+
+<h2 id="a-simple-example">A simple example</h2>
+<p>We start with an example of how to use semihosting after that we will investigate what is going on.
+Consider the following piece of code (<code class="highlighter-rouge">main.c</code>), which uses semihosting to print over the debug console.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cp">#include &lt;stdio.h&gt;
+</span><span class="k">extern</span> <span class="kt">void</span> <span class="nf">initialise_monitor_handles</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">int</span> <span class="nf">main</span><span class="p">()</span> <span class="p">{</span>
+    <span class="n">initialise_monitor_handles</span><span class="p">();</span>
+    <span class="n">printf</span><span class="p">(</span><span class="s">"Hello!</span><span class="se">\n</span><span class="s">"</span><span class="p">);</span>
+
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>In this example I build for a cortex-m33 because that is the architecture I use, but you can change the flags to compile it for other processors.
+We can compile this using:</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ arm-none-eabi-gcc -nostdlib \
+-marm -mcpu=cortex-m33 -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb \
+-o main.o -c main.c
+</code></pre></div></div>
+<p>And link it using (this binary won’t work, you need a linker script and startup files, which are mostly device specific.)</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ arm-none-eabi-gcc --specs=rdimon.specs -nostartfiles \
+-marm -mcpu=cortex-m33 -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb \
+-lc -lrdimon main.o -o main
+</code></pre></div></div>
+<p>When you have a debug session using <code class="highlighter-rouge">gdb</code> you need to execute
+<code class="highlighter-rouge">arm semihosting enable</code> or <code class="highlighter-rouge">monitor semihosting enable</code>.
+Depending on the gdb server that you use (JLinkGDBServer, openocd, …).</p>
+
+<h2 id="monitor-handles-and-the-angel-swi">Monitor Handles and the Angel SWI</h2>
+<p>The first thing we note it the function <em>initialise_monitor_handles</em>.
+Without this function you cannot print over semihosting, but what does it do?
+The implementation of this function in newlib can be found in the source of <a href="https://github.com/mirror/newlib-cygwin/blob/master/newlib/libc/sys/arm/syscalls.c">newlib/libc/sys/arm/syscall.c</a>.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="kt">void</span>
+<span class="nf">initialise_monitor_handles</span> <span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="kt">int</span> <span class="n">i</span><span class="p">;</span>
+
+  <span class="cm">/* Open the standard file descriptors by opening the special
+   * teletype device, ":tt", read-only to obtain a descriptor for
+   * standard input and write-only to obtain a descriptor for standard
+   * output. Finally, open ":tt" in append mode to obtain a descriptor
+   * for standard error. Since this is a write mode, most kernels will
+   * probably return the same value as for standard output, but the
+   * kernel can differentiate the two using the mode flag and return a
+   * different descriptor for standard error.
+   */</span>
+
+<span class="cp">#ifdef ARM_RDI_MONITOR
+</span>  <span class="kt">int</span> <span class="k">volatile</span> <span class="n">block</span><span class="p">[</span><span class="mi">3</span><span class="p">];</span>
+
+  <span class="n">block</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="kt">int</span><span class="p">)</span> <span class="s">":tt"</span><span class="p">;</span>
+  <span class="n">block</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="mi">3</span><span class="p">;</span>     <span class="cm">/* length of filename */</span>
+  <span class="n">block</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>     <span class="cm">/* mode "r" */</span>
+  <span class="n">monitor_stdin</span> <span class="o">=</span> <span class="n">do_AngelSWI</span> <span class="p">(</span><span class="n">AngelSWI_Reason_Open</span><span class="p">,</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span> <span class="n">block</span><span class="p">);</span>
+
+  <span class="n">block</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="kt">int</span><span class="p">)</span> <span class="s">":tt"</span><span class="p">;</span>
+  <span class="n">block</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="mi">3</span><span class="p">;</span>     <span class="cm">/* length of filename */</span>
+  <span class="n">block</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="mi">4</span><span class="p">;</span>     <span class="cm">/* mode "w" */</span>
+  <span class="n">monitor_stdout</span> <span class="o">=</span> <span class="n">monitor_stderr</span>
+    <span class="o">=</span> <span class="n">do_AngelSWI</span> <span class="p">(</span><span class="n">AngelSWI_Reason_Open</span><span class="p">,</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span> <span class="n">block</span><span class="p">);</span>
+<span class="cp">#else
+</span>  <span class="kt">int</span> <span class="n">fh</span><span class="p">;</span>
+  <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span> <span class="n">name</span><span class="p">;</span>
+
+  <span class="n">name</span> <span class="o">=</span> <span class="s">":tt"</span><span class="p">;</span>
+  <span class="n">asm</span> <span class="p">(</span><span class="s">"mov r0,%2; mov r1, #0; swi %a1; mov %0, r0"</span>
+       <span class="o">:</span> <span class="s">"=r"</span><span class="p">(</span><span class="n">fh</span><span class="p">)</span>
+       <span class="o">:</span> <span class="s">"i"</span> <span class="p">(</span><span class="n">SWI_Open</span><span class="p">),</span><span class="s">"r"</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+       <span class="o">:</span> <span class="s">"r0"</span><span class="p">,</span><span class="s">"r1"</span><span class="p">);</span>
+  <span class="n">monitor_stdin</span> <span class="o">=</span> <span class="n">fh</span><span class="p">;</span>
+
+  <span class="n">name</span> <span class="o">=</span> <span class="s">":tt"</span><span class="p">;</span>
+  <span class="n">asm</span> <span class="p">(</span><span class="s">"mov r0,%2; mov r1, #4; swi %a1; mov %0, r0"</span>
+       <span class="o">:</span> <span class="s">"=r"</span><span class="p">(</span><span class="n">fh</span><span class="p">)</span>
+       <span class="o">:</span> <span class="s">"i"</span> <span class="p">(</span><span class="n">SWI_Open</span><span class="p">),</span><span class="s">"r"</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+       <span class="o">:</span> <span class="s">"r0"</span><span class="p">,</span><span class="s">"r1"</span><span class="p">);</span>
+  <span class="n">monitor_stdout</span> <span class="o">=</span> <span class="n">monitor_stderr</span> <span class="o">=</span> <span class="n">fh</span><span class="p">;</span>
+<span class="cp">#endif
+</span>
+  <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">MAX_OPEN_FILES</span><span class="p">;</span> <span class="n">i</span> <span class="o">++</span><span class="p">)</span>
+    <span class="n">openfiles</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">handle</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span><span class="p">;</span>
+
+  <span class="n">openfiles</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="n">handle</span> <span class="o">=</span> <span class="n">monitor_stdin</span><span class="p">;</span>
+  <span class="n">openfiles</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="n">pos</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="n">openfiles</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">handle</span> <span class="o">=</span> <span class="n">monitor_stdout</span><span class="p">;</span>
+  <span class="n">openfiles</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">pos</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>We can see in this function opens the stdout and stdin file.
+We require the stdout file for <em>printf</em> to work.
+The preprocessor switch between <code class="highlighter-rouge">ARM_RDI_MONITOR</code> and it’s counterpart <code class="highlighter-rouge">ARM_RDP_MONITOR</code> is very interesting.
+It turns out that there are two debugging protocols: RDP which is also called Demon, and RDI which is also called Angel.
+Now we have to figure out which protocol we are using.
+When we look at the linker command we used previously, we notice <code class="highlighter-rouge">--specs=rdimon.specs</code> and <code class="highlighter-rouge">-lrdimon</code>. 
+If we look at the contents of <code class="highlighter-rouge">rdimon.specs</code>, we see:</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code># rdimon.specs
+#
+# Spec file for AArch64 baremetal newlib with version 2 of the
+# AngelAPI semi-hosting using the SVC trap instruction.
+#
+# This version supports extensibility through an extension mechanism.
+</code></pre></div></div>
+<p>So we are using RDI. 
+Notice that in the same folder as, <code class="highlighter-rouge">lib/arm-none-eabi/newlib</code>, <code class="highlighter-rouge">rdimon.specs</code> there also is a <code class="highlighter-rouge">rdpmon.specs</code>.</p>
+
+<p>With this informatin we now want to inspect <code class="highlighter-rouge">do_AngelSWI</code>.
+We can find its implementation in
+The implementation of this function in newlib can be found at <a href="https://github.com/mirror/newlib-cygwin/blob/master/newlib/libc/sys/arm/swi.h">newlib/libc/sys/arm/swi.h</a>.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cp">#include "arm.h"
+</span>
+<span class="cm">/* SWI numbers for RDP (Demon) monitor.
+ *
+ * ...
+ */</span>
+
+
+<span class="cm">/* Now the SWI numbers and reason codes for RDI (Angel) monitors.  */</span>
+<span class="cp">#define AngelSWI_ARM 			0x123456
+#ifdef __thumb__
+#define AngelSWI 			0xAB
+#else
+#define AngelSWI 			AngelSWI_ARM
+#endif
+</span><span class="cm">/* For thumb only architectures use the BKPT instruction instead of SWI.  */</span>
+<span class="cp">#ifdef THUMB_VXM
+#define AngelSWIInsn			"bkpt"
+#define AngelSWIAsm			bkpt
+#else
+#define AngelSWIInsn			"swi"
+#define AngelSWIAsm			swi
+#endif
+</span>
+<span class="cm">/* The reason codes:  */</span>
+<span class="cp">#define AngelSWI_Reason_Open		0x01
+#define AngelSWI_Reason_Close		0x02
+#define AngelSWI_Reason_WriteC		0x03
+#define AngelSWI_Reason_Write0		0x04
+#define AngelSWI_Reason_Write		0x05
+#define AngelSWI_Reason_Read		0x06
+#define AngelSWI_Reason_ReadC		0x07
+#define AngelSWI_Reason_IsTTY		0x09
+#define AngelSWI_Reason_Seek		0x0A
+#define AngelSWI_Reason_FLen		0x0C
+#define AngelSWI_Reason_TmpNam		0x0D
+#define AngelSWI_Reason_Remove		0x0E
+#define AngelSWI_Reason_Rename		0x0F
+#define AngelSWI_Reason_Clock		0x10
+#define AngelSWI_Reason_Time		0x11
+#define AngelSWI_Reason_System		0x12
+#define AngelSWI_Reason_Errno		0x13
+#define AngelSWI_Reason_GetCmdLine 	0x15
+#define AngelSWI_Reason_HeapInfo 	0x16
+#define AngelSWI_Reason_EnterSVC 	0x17
+#define AngelSWI_Reason_ReportException 0x18
+#define ADP_Stopped_ApplicationExit 	((2 &lt;&lt; 16) + 38)
+#define ADP_Stopped_RunTimeError 	((2 &lt;&lt; 16) + 35)
+</span>
+<span class="cp">#if defined(ARM_RDI_MONITOR) &amp;&amp; !defined(__ASSEMBLER__)
+</span>
+<span class="k">static</span> <span class="kr">inline</span> <span class="kt">int</span>
+<span class="nf">do_AngelSWI</span> <span class="p">(</span><span class="kt">int</span> <span class="n">reason</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span> <span class="n">arg</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="kt">int</span> <span class="n">value</span><span class="p">;</span>
+  <span class="n">asm</span> <span class="k">volatile</span> <span class="p">(</span><span class="s">"mov r0, %1; mov r1, %2; "</span> <span class="n">AngelSWIInsn</span> <span class="s">" %a3; mov %0, r0"</span>
+       <span class="o">:</span> <span class="s">"=r"</span> <span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="cm">/* Outputs */</span>
+       <span class="o">:</span> <span class="s">"r"</span> <span class="p">(</span><span class="n">reason</span><span class="p">),</span> <span class="s">"r"</span> <span class="p">(</span><span class="n">arg</span><span class="p">),</span> <span class="s">"i"</span> <span class="p">(</span><span class="n">AngelSWI</span><span class="p">)</span> <span class="cm">/* Inputs */</span>
+       <span class="o">:</span> <span class="s">"r0"</span><span class="p">,</span> <span class="s">"r1"</span><span class="p">,</span> <span class="s">"r2"</span><span class="p">,</span> <span class="s">"r3"</span><span class="p">,</span> <span class="s">"ip"</span><span class="p">,</span> <span class="s">"lr"</span><span class="p">,</span> <span class="s">"memory"</span><span class="p">,</span> <span class="s">"cc"</span>
+		<span class="cm">/* Clobbers r0 and r1, and lr if in supervisor mode */</span><span class="p">);</span>
+                <span class="cm">/* Accordingly to page 13-77 of ARM DUI 0040D other registers
+                   can also be clobbered.  Some memory positions may also be
+                   changed by a system call, so they should not be kept in
+                   registers. Note: we are assuming the manual is right and
+                   Angel is respecting the APCS.  */</span>
+  <span class="k">return</span> <span class="n">value</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="cp">#endif</span></code></pre></figure>
+
+<p>If we look at the documentation for <code class="highlighter-rouge">SYS_OPEN</code> at <a href="https://developer.arm.com/documentation/dui0040/d/angel/angel-c-library-support-swis/sys-open--0x01-">developer.arm.com</a>
+We can see that these calls open the console input and output <code class="highlighter-rouge">:tt</code>.
+The function returns a file handle that can be used for further I/O operations.</p>
+
+<h2 id="printing">Printing</h2>
+<p>When we look at the disassembly of main, which can be found by <code class="highlighter-rouge">$ arm-none-eabi-objdump --disassemble main.o</code>.
+We see that the <em>printf</em> has been replaced by a call to <em>puts</em>.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>main.o:     file format elf32-littlearm
+
+Disassembly of section .text.main:
+00000000 &lt;main&gt;:
+   0:	b580      	push	{r7, lr}
+   2:	af00      	add	r7, sp, #0
+   4:	f7ff fffe 	bl	0 &lt;initialise_monitor_handles&gt;
+   8:	4802      	ldr	r0, [pc, #8]	; (14 &lt;main+0x14&gt;)
+   a:	f7ff fffe 	bl	0 &lt;puts&gt;
+   e:	2300      	movs	r3, #0
+  10:	4618      	mov	r0, r3
+  12:	bd80      	pop	{r7, pc}
+  14:	00000000 	.word	0x00000000
+</code></pre></div></div>
+
+<p>The source of <em>puts</em> is quite complex. In order to keep this post to a reasonable length, we will explore this function in the next post.
+Thank you for reading. If you have questions or suggestions, please open an issue or mergerequest on the <a href="https://github.com/nouwaarom/nouwaarom.github.io">repository</a> for this site.</p>
+
+  </div>
+
+  
+
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy;  - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="https://nouwaarom.com/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

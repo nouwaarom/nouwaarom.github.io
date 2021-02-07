@@ -1,3 +1,614 @@
----
-layout: feed
----
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <generator uri="http://jekyllrb.com" version="4.0.1">Jekyll</generator>
+  
+  
+  <link href="https://nouwaarom.com/feed.xml" rel="self" type="application/atom+xml" />
+  <link href="https://nouwaarom.com/" rel="alternate" type="text/html" />
+  <updated>2021-02-07T11:06:41-06:00</updated>
+  <id>https://nouwaarom.com//</id>
+
+  
+    <title type="html">Random Stuff I Like</title>
+  
+
+  
+    <subtitle>A site with some stuff I am interested in and like writing about.</subtitle>
+  
+
+  
+
+  
+  
+    <entry>
+      
+      <title type="html">WIP: Investigating semihosting (2)</title>
+      
+      
+      <link href="https://nouwaarom.com/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html" rel="alternate" type="text/html" title="WIP: Investigating semihosting (2)" />
+      
+      <published>2021-02-05T00:00:00-06:00</published>
+      <updated>2021-02-05T00:00:00-06:00</updated>
+      <id>https://nouwaarom.com/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2</id>
+      <content type="html" xml:base="https://nouwaarom.com/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html">&lt;p&gt;This is part two of a series, part one can be found &lt;a href=&quot;/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html&quot;&gt;here&lt;/a&gt;.
+In this post we will investigate how we can print using semihosting.
+In particular, we will explore how &lt;em&gt;puts&lt;/em&gt; works.
+&lt;!--more--&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;printing&quot;&gt;Printing&lt;/h2&gt;
+&lt;p&gt;When we look at the disassembly of main, which can be found by &lt;code class=&quot;highlighter-rouge&quot;&gt;$ arm-none-eabi-objdump --disassemble main.o&lt;/code&gt;.
+We see that the &lt;em&gt;printf&lt;/em&gt; has been replaced by a call to &lt;em&gt;puts&lt;/em&gt;.&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;main.o:     file format elf32-littlearm
+
+Disassembly of section .text.main:
+00000000 &amp;lt;main&amp;gt;:
+   0:	b580      	push	{r7, lr}
+   2:	af00      	add	r7, sp, #0
+   4:	f7ff fffe 	bl	0 &amp;lt;initialise_monitor_handles&amp;gt;
+   8:	4802      	ldr	r0, [pc, #8]	; (14 &amp;lt;main+0x14&amp;gt;)
+   a:	f7ff fffe 	bl	0 &amp;lt;puts&amp;gt;
+   e:	2300      	movs	r3, #0
+  10:	4618      	mov	r0, r3
+  12:	bd80      	pop	{r7, pc}
+  14:	00000000 	.word	0x00000000
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Let us look at the source of &lt;em&gt;puts&lt;/em&gt;.&lt;/p&gt;
+
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;details&gt;&lt;summary&gt;&lt;span class=&quot;c1&quot;&gt;...&lt;/span&gt;&lt;/summary&gt;
+&lt;span class=&quot;cm&quot;&gt;/*
+DESCRIPTION
+&amp;lt;&amp;lt;puts&amp;gt;&amp;gt; writes the string at &amp;lt;[s]&amp;gt; (followed by a newline, instead of
+the trailing null) to the standard output stream.
+
+The alternate function &amp;lt;&amp;lt;_puts_r&amp;gt;&amp;gt; is a reentrant version.  The extra
+argument &amp;lt;[reent]&amp;gt; is a pointer to a reentrancy structure.
+
+RETURNS
+If successful, the result is a nonnegative integer; otherwise, the
+result is &amp;lt;&amp;lt;EOF&amp;gt;&amp;gt;.
+
+PORTABILITY
+ANSI C requires &amp;lt;&amp;lt;puts&amp;gt;&amp;gt;, but does not specify that the result on
+success must be &amp;lt;&amp;lt;0&amp;gt;&amp;gt;; any non-negative value is permitted.
+
+Supporting OS subroutines required: &amp;lt;&amp;lt;close&amp;gt;&amp;gt;, &amp;lt;&amp;lt;fstat&amp;gt;&amp;gt;, &amp;lt;&amp;lt;isatty&amp;gt;&amp;gt;,
+&amp;lt;&amp;lt;lseek&amp;gt;&amp;gt;, &amp;lt;&amp;lt;read&amp;gt;&amp;gt;, &amp;lt;&amp;lt;sbrk&amp;gt;&amp;gt;, &amp;lt;&amp;lt;write&amp;gt;&amp;gt;.
+*/&lt;/span&gt;
+
+&lt;span class=&quot;cp&quot;&gt;#include &amp;lt;_ansi.h&amp;gt;
+#include &amp;lt;reent.h&amp;gt;
+#include &amp;lt;stdio.h&amp;gt;
+#include &amp;lt;string.h&amp;gt;
+#include &quot;fvwrite.h&quot;
+#include &quot;local.h&quot;
+&lt;/span&gt;&lt;/details&gt;
+
+&lt;span class=&quot;cm&quot;&gt;/*
+ * Write the given string to stdout, appending a newline.
+ */&lt;/span&gt;
+
+&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt;
+&lt;span class=&quot;nf&quot;&gt;_puts_r&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;_reent&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+       &lt;span class=&quot;k&quot;&gt;const&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+&lt;span class=&quot;cp&quot;&gt;#ifdef _FVWRITE_IN_STREAMIO // newlib
+&lt;/span&gt;&lt;details&gt;&lt;summary&gt;&lt;span class=&quot;c1&quot;&gt;...&lt;/span&gt;&lt;/summary&gt;
+  &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;kt&quot;&gt;size_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;c&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;strlen&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;__suio&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;uio&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;struct&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;__siov&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;iov&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;];&lt;/span&gt;
+  &lt;span class=&quot;kt&quot;&gt;FILE&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+  &lt;span class=&quot;n&quot;&gt;iov&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;].&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;iov_base&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;iov&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;].&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;iov_len&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;c&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;iov&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;].&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;iov_base&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;iov&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;].&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;iov_len&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;uio&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;uio_resid&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;c&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;+&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;uio&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;uio_iov&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;iov&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;];&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;uio&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;uio_iovcnt&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+  &lt;span class=&quot;n&quot;&gt;_REENT_SMALL_CHECK_INIT&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;_stdout_r&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;CHECK_INIT&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;_newlib_flockfile_start&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;ORIENT&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;__sfvwrite_r&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;uio&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;?&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;EOF&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;sc&quot;&gt;'\n'&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;_newlib_flockfile_end&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;/details&gt;
+&lt;span class=&quot;cp&quot;&gt;#else // newlib_nano
+&lt;/span&gt;  &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;EOF&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;const&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;p&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;kt&quot;&gt;FILE&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;_REENT_SMALL_CHECK_INIT&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+
+  &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;_stdout_r&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;CHECK_INIT&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;_newlib_flockfile_start&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;ORIENT&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;cm&quot;&gt;/* Make sure we can write.  */&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;cantwrite&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;))&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;goto&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;err&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+  &lt;span class=&quot;k&quot;&gt;while&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;p&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+      &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;__sputc_r&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;p&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;++&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;EOF&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+	&lt;span class=&quot;k&quot;&gt;goto&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;err&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;__sputc_r&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ptr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;sc&quot;&gt;'\n'&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;EOF&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;goto&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;err&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+  &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;sc&quot;&gt;'\n'&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+&lt;span class=&quot;nl&quot;&gt;err:&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;_newlib_flockfile_end&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;fp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;cp&quot;&gt;#endif
+&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;cp&quot;&gt;#ifndef _REENT_ONLY
+&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt;
+&lt;span class=&quot;nf&quot;&gt;puts&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;const&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;_puts_r&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;_REENT&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;s&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;cp&quot;&gt;#endif&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+
+&lt;p&gt;Let us first look at the preprocessor statements.
+There is a conditional compilation on &lt;em&gt;_FVWRITE_IN_STREAMIO&lt;/em&gt;.
+With some googeling we find that this flag can be used to disable the io vector buffer. &lt;a href=&quot;https://sourceware.org/legacy-ml/newlib/2013/msg00146.html&quot;&gt;source&lt;/a&gt; 
+It turns out the buffer is available for newlib but not for newlib nano.&lt;/p&gt;
+
+&lt;p&gt;For the sake of simplicity we will explore the case without a buffer.&lt;/p&gt;
+
+&lt;p&gt;Thank you for reading. If you have questions or suggestions, please open an issue or mergerequest on the &lt;a href=&quot;https://github.com/nouwaarom/nouwaarom.github.io&quot;&gt;repository&lt;/a&gt; for this site.&lt;/p&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+
+      
+        <category term="embedded" />
+      
+        <category term="c" />
+      
+        <category term="semihosting" />
+      
+        <category term="puts" />
+      
+
+      
+
+      
+        <summary type="html">This is part two of a series, part one can be found here. In this post we will investigate how we can print using semihosting. In particular, we will explore how puts works.</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+  
+    <entry>
+      
+      <title type="html">Investigating semihosting</title>
+      
+      
+      <link href="https://nouwaarom.com/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html" rel="alternate" type="text/html" title="Investigating semihosting" />
+      
+      <published>2021-01-30T00:00:00-06:00</published>
+      <updated>2021-01-30T00:00:00-06:00</updated>
+      <id>https://nouwaarom.com/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting</id>
+      <content type="html" xml:base="https://nouwaarom.com/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">&lt;p&gt;When developing software for ARM microcontrollers there is a big chance that you want to use semihosting.
+Using semihosting you can send debug messages over SWD of JTAG using the debugger.
+This makes development easier as you do not need an other peripheral.
+I found that setting up semihosting myself was quite confusing.
+If you browse the internet there are some posts and guides on how to setup semihosting, but almost none really explaning what is going on internally.
+In this post I will dig deeper in to how it works.
+&lt;!--more--&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;a-simple-example&quot;&gt;A simple example&lt;/h2&gt;
+&lt;p&gt;We start with an example of how to use semihosting after that we will investigate what is going on.
+Consider the following piece of code (&lt;code class=&quot;highlighter-rouge&quot;&gt;main.c&lt;/code&gt;), which uses semihosting to print over the debug console.&lt;/p&gt;
+
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;span class=&quot;cp&quot;&gt;#include &amp;lt;stdio.h&amp;gt;
+&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;extern&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;initialise_monitor_handles&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;initialise_monitor_handles&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Hello!&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+
+&lt;p&gt;In this example I build for a cortex-m33 because that is the architecture I use, but you can change the flags to compile it for other processors.
+We can compile this using:&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ arm-none-eabi-gcc -nostdlib \
+-marm -mcpu=cortex-m33 -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb \
+-o main.o -c main.c
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;And link it using (this binary won’t work, you need a linker script and startup files, which are mostly device specific.)&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;$ arm-none-eabi-gcc --specs=rdimon.specs -nostartfiles \
+-marm -mcpu=cortex-m33 -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb \
+-lc -lrdimon main.o -o main
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;When you have a debug session using &lt;code class=&quot;highlighter-rouge&quot;&gt;gdb&lt;/code&gt; you need to execute
+&lt;code class=&quot;highlighter-rouge&quot;&gt;arm semihosting enable&lt;/code&gt; or &lt;code class=&quot;highlighter-rouge&quot;&gt;monitor semihosting enable&lt;/code&gt;.
+Depending on the gdb server that you use (JLinkGDBServer, openocd, …).&lt;/p&gt;
+
+&lt;h2 id=&quot;monitor-handles-and-the-angel-swi&quot;&gt;Monitor Handles and the Angel SWI&lt;/h2&gt;
+&lt;p&gt;The first thing we note it the function &lt;em&gt;initialise_monitor_handles&lt;/em&gt;.
+Without this function you cannot print over semihosting, but what does it do?
+The implementation of this function in newlib can be found in the source of &lt;a href=&quot;https://github.com/mirror/newlib-cygwin/blob/master/newlib/libc/sys/arm/syscalls.c&quot;&gt;newlib/libc/sys/arm/syscall.c&lt;/a&gt;.&lt;/p&gt;
+
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt;
+&lt;span class=&quot;nf&quot;&gt;initialise_monitor_handles&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;i&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+  &lt;span class=&quot;cm&quot;&gt;/* Open the standard file descriptors by opening the special
+   * teletype device, &quot;:tt&quot;, read-only to obtain a descriptor for
+   * standard input and write-only to obtain a descriptor for standard
+   * output. Finally, open &quot;:tt&quot; in append mode to obtain a descriptor
+   * for standard error. Since this is a write mode, most kernels will
+   * probably return the same value as for standard output, but the
+   * kernel can differentiate the two using the mode flag and return a
+   * different descriptor for standard error.
+   */&lt;/span&gt;
+
+&lt;span class=&quot;cp&quot;&gt;#ifdef ARM_RDI_MONITOR
+&lt;/span&gt;  &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;volatile&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;block&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;3&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;];&lt;/span&gt;
+
+  &lt;span class=&quot;n&quot;&gt;block&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;:tt&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;block&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;3&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;     &lt;span class=&quot;cm&quot;&gt;/* length of filename */&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;block&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;     &lt;span class=&quot;cm&quot;&gt;/* mode &quot;r&quot; */&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;monitor_stdin&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;do_AngelSWI&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;AngelSWI_Reason_Open&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;block&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+
+  &lt;span class=&quot;n&quot;&gt;block&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;:tt&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;block&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;3&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;     &lt;span class=&quot;cm&quot;&gt;/* length of filename */&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;block&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;4&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;     &lt;span class=&quot;cm&quot;&gt;/* mode &quot;w&quot; */&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;monitor_stdout&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;monitor_stderr&lt;/span&gt;
+    &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;do_AngelSWI&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;AngelSWI_Reason_Open&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;block&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+&lt;span class=&quot;cp&quot;&gt;#else
+&lt;/span&gt;  &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;fh&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;const&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+  &lt;span class=&quot;n&quot;&gt;name&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;:tt&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;asm&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;mov r0,%2; mov r1, #0; swi %a1; mov %0, r0&quot;&lt;/span&gt;
+       &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;=r&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;fh&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+       &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;i&quot;&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;SWI_Open&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;),&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;r&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+       &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;r0&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;r1&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;monitor_stdin&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;fh&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+  &lt;span class=&quot;n&quot;&gt;name&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;:tt&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;asm&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;mov r0,%2; mov r1, #4; swi %a1; mov %0, r0&quot;&lt;/span&gt;
+       &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;=r&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;fh&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+       &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;i&quot;&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;SWI_Open&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;),&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;r&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+       &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;r0&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;r1&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;monitor_stdout&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;monitor_stderr&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;fh&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;cp&quot;&gt;#endif
+&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;for&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;i&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;i&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;MAX_OPEN_FILES&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;i&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;++&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;openfiles&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;i&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;].&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;handle&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+  &lt;span class=&quot;n&quot;&gt;openfiles&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;].&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;handle&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;monitor_stdin&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;openfiles&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;].&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;pos&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;openfiles&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;].&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;handle&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;monitor_stdout&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;openfiles&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;].&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;pos&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+
+&lt;p&gt;We can see in this function opens the stdout and stdin file.
+We require the stdout file for &lt;em&gt;printf&lt;/em&gt; to work.
+The preprocessor switch between &lt;code class=&quot;highlighter-rouge&quot;&gt;ARM_RDI_MONITOR&lt;/code&gt; and it’s counterpart &lt;code class=&quot;highlighter-rouge&quot;&gt;ARM_RDP_MONITOR&lt;/code&gt; is very interesting.
+It turns out that there are two debugging protocols: RDP which is also called Demon, and RDI which is also called Angel.
+Now we have to figure out which protocol we are using.
+When we look at the linker command we used previously, we notice &lt;code class=&quot;highlighter-rouge&quot;&gt;--specs=rdimon.specs&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;-lrdimon&lt;/code&gt;. 
+If we look at the contents of &lt;code class=&quot;highlighter-rouge&quot;&gt;rdimon.specs&lt;/code&gt;, we see:&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;# rdimon.specs
+#
+# Spec file for AArch64 baremetal newlib with version 2 of the
+# AngelAPI semi-hosting using the SVC trap instruction.
+#
+# This version supports extensibility through an extension mechanism.
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;So we are using RDI. 
+Notice that in the same folder as, &lt;code class=&quot;highlighter-rouge&quot;&gt;lib/arm-none-eabi/newlib&lt;/code&gt;, &lt;code class=&quot;highlighter-rouge&quot;&gt;rdimon.specs&lt;/code&gt; there also is a &lt;code class=&quot;highlighter-rouge&quot;&gt;rdpmon.specs&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;With this informatin we now want to inspect &lt;code class=&quot;highlighter-rouge&quot;&gt;do_AngelSWI&lt;/code&gt;.
+We can find its implementation in
+The implementation of this function in newlib can be found at &lt;a href=&quot;https://github.com/mirror/newlib-cygwin/blob/master/newlib/libc/sys/arm/swi.h&quot;&gt;newlib/libc/sys/arm/swi.h&lt;/a&gt;.&lt;/p&gt;
+
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;span class=&quot;cp&quot;&gt;#include &quot;arm.h&quot;
+&lt;/span&gt;
+&lt;span class=&quot;cm&quot;&gt;/* SWI numbers for RDP (Demon) monitor.
+ *
+ * ...
+ */&lt;/span&gt;
+
+
+&lt;span class=&quot;cm&quot;&gt;/* Now the SWI numbers and reason codes for RDI (Angel) monitors.  */&lt;/span&gt;
+&lt;span class=&quot;cp&quot;&gt;#define AngelSWI_ARM 			0x123456
+#ifdef __thumb__
+#define AngelSWI 			0xAB
+#else
+#define AngelSWI 			AngelSWI_ARM
+#endif
+&lt;/span&gt;&lt;span class=&quot;cm&quot;&gt;/* For thumb only architectures use the BKPT instruction instead of SWI.  */&lt;/span&gt;
+&lt;span class=&quot;cp&quot;&gt;#ifdef THUMB_VXM
+#define AngelSWIInsn			&quot;bkpt&quot;
+#define AngelSWIAsm			bkpt
+#else
+#define AngelSWIInsn			&quot;swi&quot;
+#define AngelSWIAsm			swi
+#endif
+&lt;/span&gt;
+&lt;span class=&quot;cm&quot;&gt;/* The reason codes:  */&lt;/span&gt;
+&lt;span class=&quot;cp&quot;&gt;#define AngelSWI_Reason_Open		0x01
+#define AngelSWI_Reason_Close		0x02
+#define AngelSWI_Reason_WriteC		0x03
+#define AngelSWI_Reason_Write0		0x04
+#define AngelSWI_Reason_Write		0x05
+#define AngelSWI_Reason_Read		0x06
+#define AngelSWI_Reason_ReadC		0x07
+#define AngelSWI_Reason_IsTTY		0x09
+#define AngelSWI_Reason_Seek		0x0A
+#define AngelSWI_Reason_FLen		0x0C
+#define AngelSWI_Reason_TmpNam		0x0D
+#define AngelSWI_Reason_Remove		0x0E
+#define AngelSWI_Reason_Rename		0x0F
+#define AngelSWI_Reason_Clock		0x10
+#define AngelSWI_Reason_Time		0x11
+#define AngelSWI_Reason_System		0x12
+#define AngelSWI_Reason_Errno		0x13
+#define AngelSWI_Reason_GetCmdLine 	0x15
+#define AngelSWI_Reason_HeapInfo 	0x16
+#define AngelSWI_Reason_EnterSVC 	0x17
+#define AngelSWI_Reason_ReportException 0x18
+#define ADP_Stopped_ApplicationExit 	((2 &amp;lt;&amp;lt; 16) + 38)
+#define ADP_Stopped_RunTimeError 	((2 &amp;lt;&amp;lt; 16) + 35)
+&lt;/span&gt;
+&lt;span class=&quot;cp&quot;&gt;#if defined(ARM_RDI_MONITOR) &amp;amp;&amp;amp; !defined(__ASSEMBLER__)
+&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;static&lt;/span&gt; &lt;span class=&quot;kr&quot;&gt;inline&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt;
+&lt;span class=&quot;nf&quot;&gt;do_AngelSWI&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;reason&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;arg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;value&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;asm&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;volatile&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;mov r0, %1; mov r1, %2; &quot;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;AngelSWIInsn&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot; %a3; mov %0, r0&quot;&lt;/span&gt;
+       &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;=r&quot;&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;value&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;cm&quot;&gt;/* Outputs */&lt;/span&gt;
+       &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;r&quot;&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;reason&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;),&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;r&quot;&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;arg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;),&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;i&quot;&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;AngelSWI&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;cm&quot;&gt;/* Inputs */&lt;/span&gt;
+       &lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;r0&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;r1&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;r2&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;r3&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;ip&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;lr&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;memory&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;cc&quot;&lt;/span&gt;
+		&lt;span class=&quot;cm&quot;&gt;/* Clobbers r0 and r1, and lr if in supervisor mode */&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+                &lt;span class=&quot;cm&quot;&gt;/* Accordingly to page 13-77 of ARM DUI 0040D other registers
+                   can also be clobbered.  Some memory positions may also be
+                   changed by a system call, so they should not be kept in
+                   registers. Note: we are assuming the manual is right and
+                   Angel is respecting the APCS.  */&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;value&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;cp&quot;&gt;#endif&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+
+&lt;p&gt;If we look at the documentation for &lt;code class=&quot;highlighter-rouge&quot;&gt;SYS_OPEN&lt;/code&gt; at &lt;a href=&quot;https://developer.arm.com/documentation/dui0040/d/angel/angel-c-library-support-swis/sys-open--0x01-&quot;&gt;developer.arm.com&lt;/a&gt;
+We can see that these calls open the console input and output &lt;code class=&quot;highlighter-rouge&quot;&gt;:tt&lt;/code&gt;.
+The function returns a file handle that can be used for further I/O operations.&lt;/p&gt;
+
+&lt;h2 id=&quot;printing&quot;&gt;Printing&lt;/h2&gt;
+&lt;p&gt;When we look at the disassembly of main, which can be found by &lt;code class=&quot;highlighter-rouge&quot;&gt;$ arm-none-eabi-objdump --disassemble main.o&lt;/code&gt;.
+We see that the &lt;em&gt;printf&lt;/em&gt; has been replaced by a call to &lt;em&gt;puts&lt;/em&gt;.&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;main.o:     file format elf32-littlearm
+
+Disassembly of section .text.main:
+00000000 &amp;lt;main&amp;gt;:
+   0:	b580      	push	{r7, lr}
+   2:	af00      	add	r7, sp, #0
+   4:	f7ff fffe 	bl	0 &amp;lt;initialise_monitor_handles&amp;gt;
+   8:	4802      	ldr	r0, [pc, #8]	; (14 &amp;lt;main+0x14&amp;gt;)
+   a:	f7ff fffe 	bl	0 &amp;lt;puts&amp;gt;
+   e:	2300      	movs	r3, #0
+  10:	4618      	mov	r0, r3
+  12:	bd80      	pop	{r7, pc}
+  14:	00000000 	.word	0x00000000
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The source of &lt;em&gt;puts&lt;/em&gt; is quite complex. In order to keep this post to a reasonable length, we will explore this function in the next post.
+Thank you for reading. If you have questions or suggestions, please open an issue or mergerequest on the &lt;a href=&quot;https://github.com/nouwaarom/nouwaarom.github.io&quot;&gt;repository&lt;/a&gt; for this site.&lt;/p&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+
+      
+        <category term="embedded" />
+      
+        <category term="c" />
+      
+        <category term="initialize_monitor_handles" />
+      
+
+      
+
+      
+        <summary type="html">When developing software for ARM microcontrollers there is a big chance that you want to use semihosting. Using semihosting you can send debug messages over SWD of JTAG using the debugger. This makes development easier as you do not need an other peripheral. I found that setting up semihosting myself was quite confusing. If you browse the internet there are some posts and guides on how to setup semihosting, but almost none really explaning what is going on internally. In this post I will dig deeper in to how it works.</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+  
+    <entry>
+      
+      <title type="html">Model Checking</title>
+      
+      
+      <link href="https://nouwaarom.com/misc/2019/12/05/model-checking.html" rel="alternate" type="text/html" title="Model Checking" />
+      
+      <published>2019-12-05T00:00:00-06:00</published>
+      <updated>2019-12-05T00:00:00-06:00</updated>
+      <id>https://nouwaarom.com/misc/2019/12/05/model-checking</id>
+      <content type="html" xml:base="https://nouwaarom.com/misc/2019/12/05/model-checking.html">&lt;p&gt;This post is a simple introduction modelchecking.
+The goal of model checking is to verify if the behaviour of a system is as intended.
+This verification is especially usefull for safety-critical systems.
+Here are some examples:
+For the software in a car you want the brake pedal to &lt;em&gt;always&lt;/em&gt; make the car brake, you do not want the turning on the radio can effect this behaviour.
+For the traffic lights of an intersection you &lt;em&gt;never&lt;/em&gt; want two crossing lanes to have green light at the same time.
+A second intended behaviour of a traffic light system is that every lane will get green &lt;em&gt;eventually&lt;/em&gt;.&lt;/p&gt;
+
+&lt;!--more--&gt;
+
+&lt;p&gt;In order to verify the behaviour of a system we need two things.
+The first thing is a good model of the system.
+The second thing is a good description of the intended behaviour of the system.
+In the next sections we will give a description of what a “good model” and a “good description” of behaviour might be.
+What I will describe is definitely not the only option, or the best option for every system, there are different choices for different types of systems.&lt;/p&gt;
+
+&lt;h3 id=&quot;models&quot;&gt;Models&lt;/h3&gt;
+&lt;p&gt;Let us start with defining what a “good model” might be for checking the behaviour of a system.
+A model is a simpler representation of the truth.
+We want a model that is as simple as possible, but not so simple that a problemwith the model does not point to a problem in the real system.
+This makes sense, right?&lt;/p&gt;
+
+&lt;p&gt;Let’s take a system and see what we can remove in order to get a simple model that is still usefull.
+If we take the example of a traffic-light system for an intersection.
+The “real” system includes: lights, controllers and the software they run, a lot of wires, vehicle detection sensors, some buttons for the pedestrians.&lt;/p&gt;
+
+&lt;p&gt;Now, what information do we need in order to check the behaviour described above (no crossing lanes have green at the same moment, a lanes will eventually get green)?
+For the lights we only care about their state, are they red, orange or green? How they are connected and how bright they are etc. is not important to us.
+We are also not interested in the specifics of the buttons, they can be represented as simple binary input: a car is detected, or it is not; there are pedestrians, or there are no pedestrians.&lt;/p&gt;
+
+&lt;p&gt;For the controllers we are not interested in the specific hardware or software they use.
+We are interested in how a controller responds given a certain input and having a certain &lt;em&gt;state&lt;/em&gt;.
+The controller has a &lt;em&gt;state&lt;/em&gt; that is based on its previous inputs.
+We are not interested in what exactly this state is. e.g. we do not care the values of variables in the controller or where in it’s program it is executing.
+What we are interested in is which states a certain input can be given and in which states a certain output is produced.&lt;/p&gt;
+
+&lt;p&gt;So, what are we interested in?
+Given the following crossing:
+&lt;img src=&quot;/assets/img/crossing.png&quot; alt=&quot;Crossing&quot; width=&quot;100%&quot; /&gt;
+Where every lane has one light for every direction and a sensor that detects if there is a vehicle in that lane.&lt;/p&gt;
+
+&lt;p&gt;And the following control system:&lt;/p&gt;
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;car_north = false
+car_east = false
+...
+
+north_light = red
+east_light = red
+west_light = red
+south_light = red
+
+repeat {
+    if (car_north AND east_light=red AND west_light=red AND south_light=red) {
+        north_light = green
+        wait(5s)
+        north_light = orange
+        wait(2s)
+        north_light = red
+    }
+    if (car_east AND ...
+}
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;where &lt;code class=&quot;highlighter-rouge&quot;&gt;car_x&lt;/code&gt; is changed by the sensor.&lt;/p&gt;
+
+&lt;p&gt;This behaviour might be modeled as:
+The lights are displayed as (north_color, east_color, west_color, south_color).&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;state1: (red,red,red,red) transitions to (state2, state4)&lt;/li&gt;
+  &lt;li&gt;state2: (green,red,red,red) transitions to (state3)&lt;/li&gt;
+  &lt;li&gt;state3: (orange,red,red,red) transitinos to (state4)&lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;state4: (red,red,red,red) transitions to (state5)&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;state5: (red,red,red,red) transitions to (state6, state8)&lt;/li&gt;
+  &lt;li&gt;state6: (red,green,red,red) transitions to (state7)&lt;/li&gt;
+  &lt;li&gt;state7: (red,orange,red,red) transitinos to (state8)&lt;/li&gt;
+  &lt;li&gt;state8: (red,red,red,red) transitions to …
+…&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;This way of describing the system preserves the required information to do analysis of the behaviour of the system but removes all other information.&lt;/p&gt;
+
+&lt;h3 id=&quot;behaviour&quot;&gt;Behaviour&lt;/h3&gt;
+&lt;p&gt;This post is already long enough and I don’t want to cause you a headache.
+How to behave will be handled in the next post.&lt;/p&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+
+      
+        <category term="misc" />
+      
+
+      
+
+      
+        <summary type="html">This post is a simple introduction modelchecking. The goal of model checking is to verify if the behaviour of a system is as intended. This verification is especially usefull for safety-critical systems. Here are some examples: For the software in a car you want the brake pedal to always make the car brake, you do not want the turning on the radio can effect this behaviour. For the traffic lights of an intersection you never want two crossing lanes to have green light at the same time. A second intended behaviour of a traffic light system is that every lane will get green eventually.</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+  
+    <entry>
+      
+      <title type="html">Introduction</title>
+      
+      
+      <link href="https://nouwaarom.com/misc/2019/11/22/welcome.html" rel="alternate" type="text/html" title="Introduction" />
+      
+      <published>2019-11-22T00:00:00-06:00</published>
+      <updated>2019-11-22T00:00:00-06:00</updated>
+      <id>https://nouwaarom.com/misc/2019/11/22/welcome</id>
+      <content type="html" xml:base="https://nouwaarom.com/misc/2019/11/22/welcome.html">&lt;p&gt;This is a little introduction to who I am.
+I have always been intrigued by technology. When I was in elementary school I was trying to understand how planes and engines worked and then tried to design them myself in paint :).&lt;/p&gt;
+
+&lt;p&gt;In highschool I became interested in computers because I started gaming.
+I wanted to write a game myself so I tried to build something in Unity3D.
+In university I studied electrical engineering and embedded systems and learned a lot more about hardware and software design.
+I am currently working as an embedded software engineer, which is a lot of fun.&lt;/p&gt;</content>
+
+      
+      
+      
+      
+      
+
+      
+
+      
+        <category term="misc" />
+      
+
+      
+
+      
+        <summary type="html">This is a little introduction to who I am. I have always been intrigued by technology. When I was in elementary school I was trying to understand how planes and engines worked and then tried to design them myself in paint :). In highschool I became interested in computers because I started gaming. I wanted to write a game myself so I tried to build something in Unity3D. In university I studied electrical engineering and embedded systems and learned a lot more about hardware and software design. I am currently working as an embedded software engineer, which is a lot of fun.</summary>
+      
+
+      
+      
+    </entry>
+  
+  
+</feed>
