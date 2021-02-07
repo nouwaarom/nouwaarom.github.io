@@ -9,7 +9,7 @@
   
   
   
-  <title>WIP: Investigating semihosting (2)</title>
+  <title>WIP: Semihosting: printing with puts</title>
   <meta name="description" content="When using printf() when semihosting the printf function uses semihosting functions to print to the PC console. We will investigate how this works.">
   
 
@@ -22,7 +22,7 @@
   
 
   
-  <meta property="og:title" content="WIP: Investigating semihosting (2)">
+  <meta property="og:title" content="WIP: Semihosting: printing with puts">
   <meta property="og:site_name" content="Random Stuff I Like">
   <meta property="og:url" content="https://nouwaarom.com/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html">
   <meta property="og:description" content="When using printf() when semihosting the printf function uses semihosting functions to print to the PC console. We will investigate how this works.">
@@ -30,7 +30,7 @@
   
   <meta name="twitter:card" content="summary">
   <meta name="twitter:site" content="">
-  <meta name="twitter:title" content="WIP: Investigating semihosting (2)">
+  <meta name="twitter:title" content="WIP: Semihosting: printing with puts">
   <meta name="twitter:description" content="When using printf() when semihosting the printf function uses semihosting functions to print to the PC console. We will investigate how this works.">
   
     <meta name="twitter:creator" content="">
@@ -75,7 +75,7 @@
 
   <header class="post-header">
     
-      <h1 class="post-title" itemprop="name headline">WIP: Investigating semihosting (2)</h1>
+      <h1 class="post-title" itemprop="name headline">WIP: Semihosting: printing with puts</h1>
     
     <p class="post-meta"><time datetime="2021-02-05T00:00:00-06:00" itemprop="datePublished">Feb 5, 2021</time> •
   
@@ -100,29 +100,24 @@
   <div class="post-content" itemprop="articleBody">
     <p>This is part two of a series, part one can be found <a href="/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">here</a>.
 In this post we will investigate how we can print using semihosting.
-In particular, we will explore how <em>puts</em> works.
+In the previous post we noticed that <em>puts</em> was used to print a string using semihosting.
+Let us look at the definition of <em>puts</em>, which can be found in <a href="https://github.com/mirror/newlib-cygwin/blob/master/newlib/libc/stdio/puts.c">puts.c</a>.
 <!--more--></p>
 
-<h2 id="printing">Printing</h2>
-<p>When we look at the disassembly of main, which can be found by <code class="highlighter-rouge">$ arm-none-eabi-objdump --disassemble main.o</code>.
-We see that the <em>printf</em> has been replaced by a call to <em>puts</em>.</p>
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="kt">int</span>
+<span class="nf">puts</span> <span class="p">(</span><span class="kt">char</span> <span class="k">const</span> <span class="o">*</span> <span class="n">s</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="k">return</span> <span class="n">_puts_r</span> <span class="p">(</span><span class="n">_REENT</span><span class="p">,</span> <span class="n">s</span><span class="p">);</span>
+<span class="p">}</span></code></pre></figure>
 
-<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>main.o:     file format elf32-littlearm
+<p>We notice that <em>puts</em> does nothing but call <em>_puts_r</em>.
+The function <em>_puts_r</em> is reentrant. But what does it mean that a function is reentrant?</p>
+<blockquote>
+  <p>In computing, a computer program or subroutine is called reentrant if multiple invocations can safely run concurrently on a single processor system, where a reentrant procedure can be interrupted in the middle of its execution and then safely be called again (“re-entered”) before its previous invocations complete execution. - Wikipedia</p>
+</blockquote>
 
-Disassembly of section .text.main:
-00000000 &lt;main&gt;:
-   0:	b580      	push	{r7, lr}
-   2:	af00      	add	r7, sp, #0
-   4:	f7ff fffe 	bl	0 &lt;initialise_monitor_handles&gt;
-   8:	4802      	ldr	r0, [pc, #8]	; (14 &lt;main+0x14&gt;)
-   a:	f7ff fffe 	bl	0 &lt;puts&gt;
-   e:	2300      	movs	r3, #0
-  10:	4618      	mov	r0, r3
-  12:	bd80      	pop	{r7, pc}
-  14:	00000000 	.word	0x00000000
-</code></pre></div></div>
-
-<p>Let us look at the source of <em>puts</em>.</p>
+<p>It is very important that this function is reentrant as we want to be able to use it from the main loop and in interrupt handlers without our system crashing.
+We will investigate how reentrancy is guaranteed for this function below.</p>
 
 <figure class="highlight"><pre><code class="language-c" data-lang="c"><details><summary><span class="c1">...</span></summary>
 <span class="cm">/*
@@ -214,24 +209,294 @@ Supporting OS subroutines required: &lt;&lt;close&gt;&gt;, &lt;&lt;fstat&gt;&gt;
   <span class="n">_newlib_flockfile_end</span> <span class="p">(</span><span class="n">fp</span><span class="p">);</span>
   <span class="k">return</span> <span class="n">result</span><span class="p">;</span>
 <span class="cp">#endif
-</span><span class="p">}</span>
-
-<span class="cp">#ifndef _REENT_ONLY
-</span>
-<span class="kt">int</span>
-<span class="nf">puts</span> <span class="p">(</span><span class="kt">char</span> <span class="k">const</span> <span class="o">*</span> <span class="n">s</span><span class="p">)</span>
-<span class="p">{</span>
-  <span class="k">return</span> <span class="n">_puts_r</span> <span class="p">(</span><span class="n">_REENT</span><span class="p">,</span> <span class="n">s</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="cp">#endif</span></code></pre></figure>
+</span><span class="p">}</span></code></pre></figure>
 
 <p>Let us first look at the preprocessor statements.
 There is a conditional compilation on <em>_FVWRITE_IN_STREAMIO</em>.
-With some googeling we find that this flag can be used to disable the io vector buffer. <a href="https://sourceware.org/legacy-ml/newlib/2013/msg00146.html">source</a> 
+With some googeling we find that this flag can be used to disable the io vector buffer. <a href="https://sourceware.org/legacy-ml/newlib/2013/msg00146.html">source</a>
 It turns out the buffer is available for newlib but not for newlib nano.</p>
 
-<p>For the sake of simplicity we will explore the case without a buffer.</p>
+<p>For the sake of simplicity we will explore the case without a buffer.
+The flow of this function is a follows:</p>
+<ul>
+  <li>Get a lock on the file we want to write to.</li>
+  <li>Write the string to this file character by character.</li>
+  <li>Release the lock on the file.</li>
+</ul>
+
+<h2 id="locking-a-file">Locking a file</h2>
+<p>The functions <em>_newlib_flockfile_start</em> and <em>_newlib_flockfile_end</em> are used for file locking.
+These functions are defined in <code class="highlighter-rouge">newlib/libc/stdio/local.h</code>, the implementation of <em>_flockfile</em> and <em>_funlockfile</em> are found in <code class="highlighter-rouge">newlib/libc/include/sys/stdio.h</code>.
+We will combine them to make things a bit easier to read.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cp">#define _newlib_flockfile_start(_fp) \
+    { \
+        if (!(_fp-&gt;_flags2 &amp; __SNLK)) \
+          _flockfile (_fp)
+</span>
+<span class="cp">#define _newlib_flockfile_exit(_fp) \
+        if (!(_fp-&gt;_flags2 &amp; __SNLK)) \
+          _funlockfile(_fp); \
+
+#define _newlib_flockfile_end(_fp) \
+        if (!(_fp-&gt;_flags2 &amp; __SNLK)) \
+          _funlockfile(_fp); \
+    }
+</span>
+<span class="cp">#define _flockfile(fp) (((fp)-&gt;_flags &amp; __SSTR) ? 0 : __lock_acquire_recursive((fp)-&gt;_lock))
+#define _funlockfile(fp) (((fp)-&gt;_flags &amp; __SSTR) ? 0 : __lock_release_recursive((fp)-&gt;_lock))</span></code></pre></figure>
+
+<p>I found it quite cool that <em>_start</em> and <em>_end</em> define a scope together so that you have cannot forget to do an <em>_end</em>.</p>
+
+<h2 id="reentrancy">Reentrancy</h2>
+<p>Reentrancy code is in <code class="highlighter-rouge">newlib/libc/include/sys/reent.h</code></p>
+
+<h2 id="printing-a-character">Printing a character</h2>
+<p>The definition of <em>sputc_r</em> can be found at <code class="highlighter-rouge">newlib/libc/include/sys/stdio.h</code>.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="n">_ELIDABLE_INLINE</span> <span class="kt">int</span> <span class="nf">__sputc_r</span><span class="p">(</span><span class="k">struct</span> <span class="n">_reent</span> <span class="o">*</span><span class="n">_ptr</span><span class="p">,</span> <span class="kt">int</span> <span class="n">_c</span><span class="p">,</span> <span class="kt">FILE</span> <span class="o">*</span><span class="n">_p</span><span class="p">)</span> <span class="p">{</span>
+<span class="cp">#ifdef __SCLE
+</span>    <span class="k">if</span> <span class="p">((</span><span class="n">_p</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">&amp;</span> <span class="n">__SCLE</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="n">_c</span> <span class="o">==</span> <span class="sc">'\n'</span><span class="p">)</span>
+      <span class="n">__sputc_r</span> <span class="p">(</span><span class="n">_ptr</span><span class="p">,</span> <span class="sc">'\r'</span><span class="p">,</span> <span class="n">_p</span><span class="p">);</span>
+<span class="cp">#endif
+</span>    <span class="k">if</span> <span class="p">(</span><span class="o">--</span><span class="n">_p</span><span class="o">-&gt;</span><span class="n">_w</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="o">||</span> <span class="p">(</span><span class="n">_p</span><span class="o">-&gt;</span><span class="n">_w</span> <span class="o">&gt;=</span> <span class="n">_p</span><span class="o">-&gt;</span><span class="n">_lbfsize</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="kt">char</span><span class="p">)</span><span class="n">_c</span> <span class="o">!=</span> <span class="sc">'\n'</span><span class="p">))</span>
+        <span class="k">return</span> <span class="p">(</span><span class="o">*</span><span class="n">_p</span><span class="o">-&gt;</span><span class="n">_p</span><span class="o">++</span> <span class="o">=</span> <span class="n">_c</span><span class="p">);</span>
+    <span class="k">else</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">__swbuf_r</span><span class="p">(</span><span class="n">_ptr</span><span class="p">,</span> <span class="n">_c</span><span class="p">,</span> <span class="n">_p</span><span class="p">));</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>The implementation of <em>__swbuf_r</em> can be found in <code class="highlighter-rouge">newlib/libc/stdio/wbuf.c</code>.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cm">/*
+ * Write the given character into the (probably full) buffer for
+ * the given file.  Flush the buffer out if it is or becomes full,
+ * or if c=='\n' and the file is line buffered.
+ */</span>
+
+<span class="kt">int</span>
+<span class="nf">__swbuf_r</span> <span class="p">(</span><span class="k">struct</span> <span class="n">_reent</span> <span class="o">*</span><span class="n">ptr</span><span class="p">,</span>
+       <span class="k">register</span> <span class="kt">int</span> <span class="n">c</span><span class="p">,</span>
+       <span class="k">register</span> <span class="kt">FILE</span> <span class="o">*</span><span class="n">fp</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="k">register</span> <span class="kt">int</span> <span class="n">n</span><span class="p">;</span>
+
+  <span class="cm">/* Ensure stdio has been initialized.  */</span>
+
+  <span class="n">CHECK_INIT</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">);</span>
+
+  <span class="cm">/*
+   * In case we cannot write, or longjmp takes us out early,
+   * make sure _w is 0 (if fully- or un-buffered) or -_bf._size
+   * (if line buffered) so that we will get called again.
+   * If we did not do this, a sufficient number of putc()
+   * calls might wrap _w from negative to positive.
+   */</span>
+
+  <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_w</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_lbfsize</span><span class="p">;</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">cantwrite</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">EOF</span><span class="p">;</span>
+  <span class="n">c</span> <span class="o">=</span> <span class="p">(</span><span class="kt">unsigned</span> <span class="kt">char</span><span class="p">)</span> <span class="n">c</span><span class="p">;</span>
+
+  <span class="n">ORIENT</span> <span class="p">(</span><span class="n">fp</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">);</span>
+
+  <span class="cm">/*
+   * If it is completely full, flush it out.  Then, in any case,
+   * stuff c into the buffer.  If this causes the buffer to fill
+   * completely, or if c is '\n' and the file is line buffered,
+   * flush it (perhaps a second time).  The second flush will always
+   * happen on unbuffered streams, where _bf._size==1; fflush()
+   * guarantees that putc() will always call wbuf() by setting _w
+   * to 0, so we need not do anything else.
+   */</span>
+
+  <span class="n">n</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_p</span> <span class="o">-</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_bf</span><span class="p">.</span><span class="n">_base</span><span class="p">;</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">n</span> <span class="o">&gt;=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_bf</span><span class="p">.</span><span class="n">_size</span><span class="p">)</span>
+    <span class="p">{</span>
+      <span class="k">if</span> <span class="p">(</span><span class="n">_fflush_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">))</span>
+	<span class="k">return</span> <span class="n">EOF</span><span class="p">;</span>
+      <span class="n">n</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="p">}</span>
+  <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_w</span><span class="o">--</span><span class="p">;</span>
+  <span class="o">*</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_p</span><span class="o">++</span> <span class="o">=</span> <span class="n">c</span><span class="p">;</span>
+  <span class="k">if</span> <span class="p">(</span><span class="o">++</span><span class="n">n</span> <span class="o">==</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_bf</span><span class="p">.</span><span class="n">_size</span> <span class="o">||</span> <span class="p">(</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">&amp;</span> <span class="n">__SLBF</span> <span class="o">&amp;&amp;</span> <span class="n">c</span> <span class="o">==</span> <span class="sc">'\n'</span><span class="p">))</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">_fflush_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">))</span>
+      <span class="k">return</span> <span class="n">EOF</span><span class="p">;</span>
+  <span class="k">return</span> <span class="n">c</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>The source of <em>_fflush_r</em> can be found in <code class="highlighter-rouge">newlib/libc/stdio/fflush.c</code>.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="kt">int</span>
+<span class="nf">_fflush_r</span> <span class="p">(</span><span class="k">struct</span> <span class="n">_reent</span> <span class="o">*</span><span class="n">ptr</span><span class="p">,</span>
+       <span class="k">register</span> <span class="kt">FILE</span> <span class="o">*</span> <span class="n">fp</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
+
+<span class="cp">#ifdef _REENT_SMALL
+</span>  <span class="cm">/* For REENT_SMALL platforms, it is possible we are being
+     called for the first time on a std stream.  This std
+     stream can belong to a reentrant struct that is not
+     _REENT.  If CHECK_INIT gets called below based on _REENT,
+     we will end up changing said file pointers to the equivalent
+     std stream off of _REENT.  This causes unexpected behavior if
+     there is any data to flush on the _REENT std stream.  There
+     are two alternatives to fix this:  1) make a reentrant fflush
+     or 2) simply recognize that this file has nothing to flush
+     and return immediately before performing a CHECK_INIT.  Choice
+     2 is implemented here due to its simplicity.  */</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_bf</span><span class="p">.</span><span class="n">_base</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="cp">#endif </span><span class="cm">/* _REENT_SMALL  */</span><span class="cp">
+</span>
+  <span class="n">CHECK_INIT</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">);</span>
+
+  <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+
+  <span class="n">_newlib_flockfile_start</span> <span class="p">(</span><span class="n">fp</span><span class="p">);</span>
+  <span class="n">ret</span> <span class="o">=</span> <span class="n">__sflush_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">);</span>
+  <span class="n">_newlib_flockfile_end</span> <span class="p">(</span><span class="n">fp</span><span class="p">);</span>
+  <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+<span class="p">}</span>
+
+
+<span class="cm">/* Flush a single file, or (if fp is NULL) all files.  */</span>
+
+<span class="cm">/* Core function which does not lock file pointer.  This gets called
+   directly from __srefill. */</span>
+<span class="kt">int</span>
+<span class="nf">__sflush_r</span> <span class="p">(</span><span class="k">struct</span> <span class="n">_reent</span> <span class="o">*</span><span class="n">ptr</span><span class="p">,</span>
+       <span class="k">register</span> <span class="kt">FILE</span> <span class="o">*</span> <span class="n">fp</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="k">register</span> <span class="kt">unsigned</span> <span class="kt">char</span> <span class="o">*</span><span class="n">p</span><span class="p">;</span>
+  <span class="k">register</span> <span class="n">_READ_WRITE_BUFSIZE_TYPE</span> <span class="n">n</span><span class="p">;</span>
+  <span class="k">register</span> <span class="n">_READ_WRITE_RETURN_TYPE</span> <span class="n">t</span><span class="p">;</span>
+  <span class="kt">short</span> <span class="n">flags</span><span class="p">;</span>
+
+  <span class="n">flags</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span><span class="p">;</span>
+  <span class="k">if</span> <span class="p">((</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">__SWR</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="p">{</span>
+<span class="cp">#ifdef _FSEEK_OPTIMIZATION
+</span>      <span class="cm">/* For a read stream, an fflush causes the next seek to be
+         unoptimized (i.e. forces a system-level seek).  This conforms
+         to the POSIX and SUSv3 standards.  */</span>
+      <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">|=</span> <span class="n">__SNPT</span><span class="p">;</span>
+<span class="cp">#endif
+</span>
+      <span class="cm">/* For a seekable stream with buffered read characters, we will attempt
+         a seek to the current position now.  A subsequent read will then get
+         the next byte from the file rather than the buffer.  This conforms
+         to the POSIX and SUSv3 standards.  Note that the standards allow
+         this seek to be deferred until necessary, but we choose to do it here
+         to make the change simpler, more contained, and less likely
+         to miss a code scenario.  */</span>
+      <span class="k">if</span> <span class="p">((</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_r</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="o">||</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_ur</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_seek</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span>
+	<span class="p">{</span>
+	  <span class="kt">int</span> <span class="n">tmp_errno</span><span class="p">;</span>
+<span class="cp">#ifdef __LARGE64_FILES
+</span>	  <span class="n">_fpos64_t</span> <span class="n">curoff</span><span class="p">;</span>
+<span class="cp">#else
+</span>	  <span class="n">_fpos_t</span> <span class="n">curoff</span><span class="p">;</span>
+<span class="cp">#endif
+</span>
+	  <span class="cm">/* Save last errno and set errno to 0, so we can check if a device
+	     returns with a valid position -1.  We restore the last errno if
+	     no other error condition has been encountered. */</span>
+	  <span class="n">tmp_errno</span> <span class="o">=</span> <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_errno</span><span class="p">;</span>
+	  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_errno</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+	  <span class="cm">/* Get the physical position we are at in the file.  */</span>
+	  <span class="k">if</span> <span class="p">(</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">&amp;</span> <span class="n">__SOFF</span><span class="p">)</span>
+	    <span class="n">curoff</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_offset</span><span class="p">;</span>
+	  <span class="k">else</span>
+	    <span class="p">{</span>
+	      <span class="cm">/* We don't know current physical offset, so ask for it.
+		 Only ESPIPE and EINVAL are ignorable.  */</span>
+<span class="cp">#ifdef __LARGE64_FILES
+</span>	      <span class="k">if</span> <span class="p">(</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">&amp;</span> <span class="n">__SL64</span><span class="p">)</span>
+		<span class="n">curoff</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_seek64</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_cookie</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">SEEK_CUR</span><span class="p">);</span>
+	      <span class="k">else</span>
+<span class="cp">#endif
+</span>		<span class="n">curoff</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_seek</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_cookie</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">SEEK_CUR</span><span class="p">);</span>
+	      <span class="k">if</span> <span class="p">(</span><span class="n">curoff</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1L</span> <span class="o">&amp;&amp;</span> <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_errno</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
+		<span class="p">{</span>
+		  <span class="kt">int</span> <span class="n">result</span> <span class="o">=</span> <span class="n">EOF</span><span class="p">;</span>
+		  <span class="k">if</span> <span class="p">(</span><span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_errno</span> <span class="o">==</span> <span class="n">ESPIPE</span> <span class="o">||</span> <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_errno</span> <span class="o">==</span> <span class="n">EINVAL</span><span class="p">)</span>
+		    <span class="p">{</span>
+		      <span class="n">result</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+		      <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_errno</span> <span class="o">=</span> <span class="n">tmp_errno</span><span class="p">;</span>
+		    <span class="p">}</span>
+		  <span class="k">else</span>
+		    <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">|=</span> <span class="n">__SERR</span><span class="p">;</span>
+		  <span class="k">return</span> <span class="n">result</span><span class="p">;</span>
+		<span class="p">}</span>
+            <span class="p">}</span>
+          <span class="k">if</span> <span class="p">(</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">&amp;</span> <span class="n">__SRD</span><span class="p">)</span>
+            <span class="p">{</span>
+              <span class="cm">/* Current offset is at end of buffer.  Compensate for
+                 characters not yet read.  */</span>
+              <span class="n">curoff</span> <span class="o">-=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_r</span><span class="p">;</span>
+              <span class="k">if</span> <span class="p">(</span><span class="n">HASUB</span> <span class="p">(</span><span class="n">fp</span><span class="p">))</span>
+                <span class="n">curoff</span> <span class="o">-=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_ur</span><span class="p">;</span>
+            <span class="p">}</span>
+	  <span class="cm">/* Now physically seek to after byte last read.  */</span>
+<span class="cp">#ifdef __LARGE64_FILES
+</span>	  <span class="k">if</span> <span class="p">(</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">&amp;</span> <span class="n">__SL64</span><span class="p">)</span>
+	    <span class="n">curoff</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_seek64</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_cookie</span><span class="p">,</span> <span class="n">curoff</span><span class="p">,</span> <span class="n">SEEK_SET</span><span class="p">);</span>
+	  <span class="k">else</span>
+<span class="cp">#endif
+</span>	    <span class="n">curoff</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_seek</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_cookie</span><span class="p">,</span> <span class="n">curoff</span><span class="p">,</span> <span class="n">SEEK_SET</span><span class="p">);</span>
+	  <span class="k">if</span> <span class="p">(</span><span class="n">curoff</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span> <span class="o">||</span> <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_errno</span> <span class="o">==</span> <span class="mi">0</span>
+	      <span class="o">||</span> <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_errno</span> <span class="o">==</span> <span class="n">ESPIPE</span> <span class="o">||</span> <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_errno</span> <span class="o">==</span> <span class="n">EINVAL</span><span class="p">)</span>
+	    <span class="p">{</span>
+	      <span class="cm">/* Seek successful or ignorable error condition.
+		 We can clear read buffer now.  */</span>
+<span class="cp">#ifdef _FSEEK_OPTIMIZATION
+</span>	      <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="n">__SNPT</span><span class="p">;</span>
+<span class="cp">#endif
+</span>	      <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_r</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+	      <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_p</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_bf</span><span class="p">.</span><span class="n">_base</span><span class="p">;</span>
+	      <span class="k">if</span> <span class="p">((</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">&amp;</span> <span class="n">__SOFF</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="n">curoff</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span> <span class="o">||</span> <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_errno</span> <span class="o">==</span> <span class="mi">0</span><span class="p">))</span>
+		<span class="n">fp</span><span class="o">-&gt;</span><span class="n">_offset</span> <span class="o">=</span> <span class="n">curoff</span><span class="p">;</span>
+	      <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_errno</span> <span class="o">=</span> <span class="n">tmp_errno</span><span class="p">;</span>
+	      <span class="k">if</span> <span class="p">(</span><span class="n">HASUB</span> <span class="p">(</span><span class="n">fp</span><span class="p">))</span>
+		<span class="n">FREEUB</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">);</span>
+	    <span class="p">}</span>
+	  <span class="k">else</span>
+	    <span class="p">{</span>
+	      <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">|=</span> <span class="n">__SERR</span><span class="p">;</span>
+	      <span class="k">return</span> <span class="n">EOF</span><span class="p">;</span>
+	    <span class="p">}</span>
+	<span class="p">}</span>
+      <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="p">}</span>
+  <span class="k">if</span> <span class="p">((</span><span class="n">p</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_bf</span><span class="p">.</span><span class="n">_base</span><span class="p">)</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span>
+    <span class="p">{</span>
+      <span class="cm">/* Nothing to flush.  */</span>
+      <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="p">}</span>
+  <span class="n">n</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_p</span> <span class="o">-</span> <span class="n">p</span><span class="p">;</span>		<span class="cm">/* write this much */</span>
+
+  <span class="cm">/*
+   * Set these immediately to avoid problems with longjmp
+   * and to allow exchange buffering (via setvbuf) in user
+   * write function.
+   */</span>
+  <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_p</span> <span class="o">=</span> <span class="n">p</span><span class="p">;</span>
+  <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_w</span> <span class="o">=</span> <span class="n">flags</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">__SLBF</span> <span class="o">|</span> <span class="n">__SNBF</span><span class="p">)</span> <span class="o">?</span> <span class="mi">0</span> <span class="o">:</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_bf</span><span class="p">.</span><span class="n">_size</span><span class="p">;</span>
+
+  <span class="k">while</span> <span class="p">(</span><span class="n">n</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="p">{</span>
+      <span class="n">t</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_write</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_cookie</span><span class="p">,</span> <span class="p">(</span><span class="kt">char</span> <span class="o">*</span><span class="p">)</span> <span class="n">p</span><span class="p">,</span> <span class="n">n</span><span class="p">);</span>
+      <span class="k">if</span> <span class="p">(</span><span class="n">t</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">)</span>
+	<span class="p">{</span>
+          <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">|=</span> <span class="n">__SERR</span><span class="p">;</span>
+          <span class="k">return</span> <span class="n">EOF</span><span class="p">;</span>
+	<span class="p">}</span>
+      <span class="n">p</span> <span class="o">+=</span> <span class="n">t</span><span class="p">;</span>
+      <span class="n">n</span> <span class="o">-=</span> <span class="n">t</span><span class="p">;</span>
+    <span class="p">}</span>
+  <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
 
 <p>Thank you for reading. If you have questions or suggestions, please open an issue or mergerequest on the <a href="https://github.com/nouwaarom/nouwaarom.github.io">repository</a> for this site.</p>
 

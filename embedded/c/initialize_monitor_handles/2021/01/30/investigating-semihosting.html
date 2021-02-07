@@ -9,7 +9,7 @@
   
   
   
-  <title>Investigating semihosting</title>
+  <title>Semihosting: initialize monitor</title>
   <meta name="description" content="There are some posts and guides on how to setup semihosting, but almost none really explaning what is going on internally. In this post I will dig deeper in to how it works.">
   
 
@@ -22,7 +22,7 @@
   
 
   
-  <meta property="og:title" content="Investigating semihosting">
+  <meta property="og:title" content="Semihosting: initialize monitor">
   <meta property="og:site_name" content="Random Stuff I Like">
   <meta property="og:url" content="https://nouwaarom.com/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">
   <meta property="og:description" content="There are some posts and guides on how to setup semihosting, but almost none really explaning what is going on internally. In this post I will dig deeper in to how it works.">
@@ -30,7 +30,7 @@
   
   <meta name="twitter:card" content="summary">
   <meta name="twitter:site" content="">
-  <meta name="twitter:title" content="Investigating semihosting">
+  <meta name="twitter:title" content="Semihosting: initialize monitor">
   <meta name="twitter:description" content="There are some posts and guides on how to setup semihosting, but almost none really explaning what is going on internally. In this post I will dig deeper in to how it works.">
   
     <meta name="twitter:creator" content="">
@@ -75,7 +75,7 @@
 
   <header class="post-header">
     
-      <h1 class="post-title" itemprop="name headline">Investigating semihosting</h1>
+      <h1 class="post-title" itemprop="name headline">Semihosting: initialize monitor</h1>
     
     <p class="post-meta"><time datetime="2021-01-30T00:00:00-06:00" itemprop="datePublished">Jan 30, 2021</time> •
   
@@ -105,7 +105,7 @@ In this post I will dig deeper in to how it works.
 
 <h2 id="a-simple-example">A simple example</h2>
 <p>We start with an example of how to use semihosting after that we will investigate what is going on.
-Consider the following piece of code (<code class="highlighter-rouge">main.c</code>), which uses semihosting to print over the debug console.</p>
+Consider the following piece of code (<code class="highlighter-rouge">main.c</code>). Which uses semihosting to print over the debug console.</p>
 
 <figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cp">#include &lt;stdio.h&gt;
 </span><span class="k">extern</span> <span class="kt">void</span> <span class="nf">initialise_monitor_handles</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
@@ -116,7 +116,7 @@ Consider the following piece of code (<code class="highlighter-rouge">main.c</co
     <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
 <span class="p">}</span></code></pre></figure>
 
-<p>In this example I build for a cortex-m33 because that is the architecture I use, but you can change the flags to compile it for other processors.
+<p>In this example I build for a cortex-m33 because that is the architecture I use. You can change the flags to compile it for other processors.
 We can compile this using:</p>
 <div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>$ arm-none-eabi-gcc -nostdlib \
 -marm -mcpu=cortex-m33 -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb \
@@ -127,7 +127,8 @@ We can compile this using:</p>
 -marm -mcpu=cortex-m33 -mfpu=fpv5-sp-d16 -mfloat-abi=hard -mthumb \
 -lc -lrdimon main.o -o main
 </code></pre></div></div>
-<p>When you have a debug session using <code class="highlighter-rouge">gdb</code> you need to execute
+<p>The important flags for semihosting are: <code class="highlighter-rouge">--specs=rdimon.specs</code> and <code class="highlighter-rouge">-lrdimon</code>.
+When you have a debug session using <code class="highlighter-rouge">gdb</code> you need to execute
 <code class="highlighter-rouge">arm semihosting enable</code> or <code class="highlighter-rouge">monitor semihosting enable</code>.
 Depending on the gdb server that you use (JLinkGDBServer, openocd, …).</p>
 

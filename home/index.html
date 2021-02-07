@@ -82,15 +82,16 @@
 <ul>
   
     <li>
-      <a href="/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html">WIP: Investigating semihosting (2) - 05 Feb 2021</a>
+      <a href="/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html">WIP: Semihosting: printing with puts - 05 Feb 2021</a>
       <p>This is part two of a series, part one can be found <a href="/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">here</a>.
 In this post we will investigate how we can print using semihosting.
-In particular, we will explore how <em>puts</em> works.</p>
+In the previous post we noticed that <em>puts</em> was used to print a string using semihosting.
+Let us look at the definition of <em>puts</em>, which can be found in <a href="https://github.com/mirror/newlib-cygwin/blob/master/newlib/libc/stdio/puts.c">puts.c</a>.</p>
 
     </li>
   
     <li>
-      <a href="/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">Investigating semihosting - 30 Jan 2021</a>
+      <a href="/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">Semihosting: initialize monitor - 30 Jan 2021</a>
       <p>When developing software for ARM microcontrollers there is a big chance that you want to use semihosting.
 Using semihosting you can send debug messages over SWD of JTAG using the debugger.
 This makes development easier as you do not need an other peripheral.
