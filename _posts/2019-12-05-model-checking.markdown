@@ -43,7 +43,7 @@ What we are interested in is which states a certain input can be given and in wh
 
 So, what are we interested in?
 Given the following crossing:
-![Crossing](/assets/img/crossing.png){:width="100%"}
+![Crossing](/assets/img/crossing.png)
 Where every lane has one light for every direction and a sensor that detects if there is a vehicle in that lane.
 
 And the following control system:
