@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>Qt Addressbook Improved</title>
+  <meta name="description" content="A more clean an consise version of the addressbook example provided with Qt. (with inline editing)">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://nouwaarom.com/qt/2021/12/19/qt-addressbook-example.html">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Now why?" href="https://nouwaarom.com/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="Qt Addressbook Improved">
+  <meta property="og:site_name" content="Now why?">
+  <meta property="og:url" content="https://nouwaarom.com/qt/2021/12/19/qt-addressbook-example.html">
+  <meta property="og:description" content="A more clean an consise version of the addressbook example provided with Qt. (with inline editing)">
+  
+  
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:site" content="">
+  <meta name="twitter:title" content="Qt Addressbook Improved">
+  <meta name="twitter:description" content="A more clean an consise version of the addressbook example provided with Qt. (with inline editing)">
+  
+    <meta name="twitter:creator" content="">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  
+  <!-- Counter.dev Analytics -->
+  <script>if(!sessionStorage.getItem("_swa")&&document.referrer.indexOf(location.protocol+"//"+location.host)!== 0){fetch("https://counter.dev/track?"+new URLSearchParams({referrer:document.referrer,screen:screen.width+"x"+screen.height,user:"nouwaarom",utcoffset:"1"}))};sessionStorage.setItem("_swa","1");</script>
+
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Now why?</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/nouwaarom">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    
+      <h1 class="post-title" itemprop="name headline">Qt Addressbook Improved</h1>
+    
+    <p class="post-meta"><time datetime="2021-12-19T00:00:00-06:00" itemprop="datePublished">Dec 19, 2021</time> •
+  
+    
+    
+  
+
+
+
+</p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>Qt provides a lot of good examples of how the framework can be used.
+While good at explaining the available functionality, the design of these examples is not optimal.
+In this post I want to discuss the addressbook example, which is used to explain model/view in qt.
+The adjusted code can be found at my <a href="https://www.github.com/nouwaarom/Qt-Addressbook-Example">github</a>.</p>
+
+<!--more-->
+
+<p>The demo application is an addressbook.
+The contacts only have a name and an address.
+The addressbook is sorted by alphabet.</p>
+
+<p><img src="/assets/img/addressbook.png" alt="Screenshot" class="align-center" /></p>
+
+<p>The main classes of this example are:</p>
+<ul>
+  <li><code class="highlighter-rouge">AddressWidget</code>, which is a <code class="highlighter-rouge">QTabWidget</code> and is responsible for connecting the model and view.</li>
+  <li><code class="highlighter-rouge">TableModel</code>, which is a <code class="highlighter-rouge">QAbstractTableModel</code> and is responsible for keeping track of the contacts and providing data for the view.</li>
+</ul>
+
+<p>The first thing I noticed while browsing the source is that <code class="highlighter-rouge">AddressWidget</code> is aware of the internals of <code class="highlighter-rouge">TableModel</code>.
+Take a look at <code class="highlighter-rouge">AddressWidget::addEntry</code> for example:</p>
+
+<figure class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="kt">void</span> <span class="n">AddressWidget</span><span class="o">::</span><span class="n">addEntry</span><span class="p">(</span><span class="k">const</span> <span class="n">QString</span> <span class="o">&amp;</span><span class="n">name</span><span class="p">,</span> <span class="k">const</span> <span class="n">QString</span> <span class="o">&amp;</span><span class="n">address</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">table</span><span class="o">-&gt;</span><span class="n">getContacts</span><span class="p">().</span><span class="n">contains</span><span class="p">({</span> <span class="n">name</span><span class="p">,</span> <span class="n">address</span> <span class="p">}))</span> <span class="p">{</span>
+        <span class="n">table</span><span class="o">-&gt;</span><span class="n">insertRows</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">QModelIndex</span><span class="p">());</span>
+
+        <span class="n">QModelIndex</span> <span class="n">index</span> <span class="o">=</span> <span class="n">table</span><span class="o">-&gt;</span><span class="n">index</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">QModelIndex</span><span class="p">());</span>
+        <span class="n">table</span><span class="o">-&gt;</span><span class="n">setData</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">Qt</span><span class="o">::</span><span class="n">EditRole</span><span class="p">);</span>
+        <span class="n">index</span> <span class="o">=</span> <span class="n">table</span><span class="o">-&gt;</span><span class="n">index</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">QModelIndex</span><span class="p">());</span>
+        <span class="n">table</span><span class="o">-&gt;</span><span class="n">setData</span><span class="p">(</span><span class="n">index</span><span class="p">,</span> <span class="n">address</span><span class="p">,</span> <span class="n">Qt</span><span class="o">::</span><span class="n">EditRole</span><span class="p">);</span>
+        <span class="n">removeTab</span><span class="p">(</span><span class="n">indexOf</span><span class="p">(</span><span class="n">newAddressTab</span><span class="p">));</span>
+<details><summary><span class="c1">...</span></summary>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="n">QMessageBox</span><span class="o">::</span><span class="n">information</span><span class="p">(</span><span class="k">this</span><span class="p">,</span> <span class="n">tr</span><span class="p">(</span><span class="s">"Duplicate Name"</span><span class="p">),</span>
+            <span class="n">tr</span><span class="p">(</span><span class="s">"The name </span><span class="se">\"</span><span class="s">%1</span><span class="se">\"</span><span class="s"> already exists."</span><span class="p">).</span><span class="n">arg</span><span class="p">(</span><span class="n">name</span><span class="p">));</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</details></code></pre></figure>
+
+<p>Let me try to clarify this code a bit. The property <code class="highlighter-rouge">table</code> holds a <code class="highlighter-rouge">TableModel</code>.
+To add data to this model the <code class="highlighter-rouge">TableModel::insertRows</code> and <code class="highlighter-rouge">TableModel::setData</code> functions are used.
+The function <code class="highlighter-rouge">TableModel::insertRows</code> adds a new, empty, row.
+The function <code class="highlighter-rouge">TableModel::setData</code> sets the data for a specific row and column.
+The problem with this code is that because of this <code class="highlighter-rouge">AddressWidget</code> needs to be aware of how <code class="highlighter-rouge">TableModel</code> stores it’s data.
+If you would decide it is better to change the columns, or add a new column in between them you would need to rewrite this code as well.
+In other words, this code violates the <a href="https://en.wikipedia.org/wiki/Single-responsibility_principle">single-responsibiliy principle</a>.
+Plus it is hard to read.</p>
+
+<p>We can simplify this code by creating a <code class="highlighter-rouge">TableModel::addContact</code> method.
+Let’s look at this method and the simplifies version of <code class="highlighter-rouge">AddressWidget::addEntry</code>.</p>
+
+<figure class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="kt">void</span> <span class="n">TableModel</span><span class="o">::</span><span class="n">addContact</span><span class="p">(</span><span class="k">const</span> <span class="n">Contact</span><span class="o">&amp;</span> <span class="n">contact</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// The beginInsertRows and endInsertRows are used to signal updates to the view.</span>
+    <span class="n">beginInsertRows</span><span class="p">(</span><span class="n">QModelIndex</span><span class="p">(),</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+
+    <span class="n">contacts</span><span class="p">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">contact</span><span class="p">);</span>
+
+    <span class="n">endInsertRows</span><span class="p">();</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>As we can see, the <code class="highlighter-rouge">addContact</code> function is really clean.
+The contact is added to the list of contacts and two helper functions are called in order to notify the view of the change.</p>
+
+<figure class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="kt">void</span> <span class="n">AddressWidget</span><span class="o">::</span><span class="n">addEntry</span><span class="p">(</span><span class="k">const</span> <span class="n">QString</span> <span class="o">&amp;</span><span class="n">name</span><span class="p">,</span> <span class="k">const</span> <span class="n">QString</span> <span class="o">&amp;</span><span class="n">address</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">table</span><span class="o">-&gt;</span><span class="n">getContacts</span><span class="p">().</span><span class="n">contains</span><span class="p">({</span> <span class="n">name</span><span class="p">,</span> <span class="n">address</span> <span class="p">}))</span> <span class="p">{</span>
+        <span class="n">table</span><span class="o">-&gt;</span><span class="n">addContact</span><span class="p">(</span><span class="n">Contact</span><span class="p">(</span><span class="n">name</span><span class="p">,</span><span class="n">address</span><span class="p">));</span>
+        <span class="n">removeTab</span><span class="p">(</span><span class="n">indexOf</span><span class="p">(</span><span class="n">newAddressTab</span><span class="p">));</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="n">QMessageBox</span><span class="o">::</span><span class="n">information</span><span class="p">(</span><span class="k">this</span><span class="p">,</span> <span class="n">tr</span><span class="p">(</span><span class="s">"Duplicate Name"</span><span class="p">),</span>
+            <span class="n">tr</span><span class="p">(</span><span class="s">"The name </span><span class="se">\"</span><span class="s">%1</span><span class="se">\"</span><span class="s"> already exists."</span><span class="p">).</span><span class="n">arg</span><span class="p">(</span><span class="n">name</span><span class="p">));</span>
+    <span class="p">}</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>In <code class="highlighter-rouge">addEntry</code>, we can replace the whole sequence for adding a contact with a simple call to <code class="highlighter-rouge">table-&gt;addContact</code>.
+With this approach the internals of <code class="highlighter-rouge">TableModel</code> can now safely be changed without having to modify <code class="highlighter-rouge">AddressWidget</code> and we have created more readable code!</p>
+
+<p>Now, there is a reason for using the <code class="highlighter-rouge">TableModel::setData</code> function. As we will see in the next post it is used to make models editable.</p>
+
+<p>Thank you for reading. If you have questions or suggestions, please open an issue or mergerequest on the <a href="https://github.com/nouwaarom/nouwaarom.github.io">repository</a> for this site.</p>
+
+  </div>
+
+  
+
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy;  - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="https://nouwaarom.com/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>

@@ -10,7 +10,7 @@ table { width: 100%; margin: 0 0 20px 0; text-align: left; }
 h1, h2, h3, h4, h5, h6, p, blockquote, pre, ul, ol, dl, figure, .highlight { margin-bottom: 15px; }
 
 /** Images */
-img { max-width: 100%; vertical-align: middle; }
+img { max-width: 100%; vertical-align: middle; margin: 0 auto; display: block; }
 
 /** Figures */
 figure > img { display: block; }
