@@ -1,30 +1,34 @@
 ---
 layout: post
-title:  "Qt Addressbook Improved" 
+title:  "Qt TableView: Improved Addressbook Example" 
 date:   2021-12-19
 draft: false
-description: "A more clean an consise version of the addressbook example provided with Qt. (with inline editing)"
+description: "A more clean and consise version of the addressbook example provided with Qt. (with inline editing)"
 categories: qt
 ---
 
-Qt provides a lot of good examples of how the framework can be used.
-While good at explaining the available functionality, the design of these examples is not optimal.
-In this post I want to discuss the addressbook example, which is used to explain model/view in qt.
-The adjusted code can be found at my [github](https://www.github.com/nouwaarom/Qt-Addressbook-Example).
+In this post I want to discuss the Qt6 [addressbook example](https://doc.qt.io/qt-6/qtwidgets-itemviews-addressbook-example.html), which is used to explain model/view in Qt.
+I will show how we can modify this example to a more maintainable architecture by decoupling the widget and the model.
+The original example can be found in Qt creator.
+The modified code can be found at my [github](https://www.github.com/nouwaarom/Qt-Addressbook-Example).
 
 <!--more-->
 
-The demo application is an addressbook.
-The contacts only have a name and an address.
-The addressbook is sorted by alphabet.
+In the example the TableView is used to implement a simple addressbook wich is sorted by alphabet groups (abc-def-ghi-...), it demonstrates how a view can be sorted by a sort and filter proxy. While the code shows how to use a QTableView and QSortFilterProxyModel, the implemenation violates the [single-responsibiliy principle](https://en.wikipedia.org/wiki/Single-responsibility_principle).
+In this post, we will discover how to decouple the tablemodel from the widget.
 
 ![Screenshot](/assets/img/addressbook.png){:width="60%", .align-center}
 
 The main classes of this example are:
 - `AddressWidget`, which is a `QTabWidget` and is responsible for connecting the model and view.
+   It creates and populates the model, creates the view and handles the menu items.
 - `TableModel`, which is a `QAbstractTableModel` and is responsible for keeping track of the contacts and providing data for the view.
+   To do this it provides and interface to the view from which data can be read and another interface from which data can be added to the model.
+   The interface to the view consist of the functions: `rowCount`, `columnCount`, `data`, `headerData` and `flags`.
+   The view will use this functions to get the data it wants to display from the model.
 
-The first thing I noticed while browsing the source is that `AddressWidget` is aware of the internals of `TableModel`.
+## Coupling between AddressWidget and TableModel
+While browsing the source of `AddressWidget` we notice that `AddressWidget` is aware of the internals of `TableModel`.
 Take a look at `AddressWidget::addEntry` for example:
 {% fold_highlight %}
 {% highlight c++ %}
@@ -48,16 +52,21 @@ void AddressWidget::addEntry(const QString &name, const QString &address)
 {% endhighlight %}
 {% endfold_highlight %}
 Let me try to clarify this code a bit. The property `table` holds a `TableModel`.
+First there is a check of a contact with this data is already in the model and only if there isn't, the data is added.
 To add data to this model the `TableModel::insertRows` and `TableModel::setData` functions are used.
 The function `TableModel::insertRows` adds a new, empty, row.
-The function `TableModel::setData` sets the data for a specific row and column.
-The problem with this code is that because of this `AddressWidget` needs to be aware of how `TableModel` stores it's data.
-If you would decide it is better to change the columns, or add a new column in between them you would need to rewrite this code as well.
-In other words, this code violates the [single-responsibiliy principle](https://en.wikipedia.org/wiki/Single-responsibility_principle).
-Plus it is hard to read.
+The function `TableModel::setData` sets the data for a specific row and column. The first column contains the name and the second column contains the address.
 
-We can simplify this code by creating a `TableModel::addContact` method.
-Let's look at this method and the simplifies version of `AddressWidget::addEntry`.
+## Why coupling is not ideal 
+The problem with this code is that because of this `AddressWidget` needs to be aware of how `TableModel` stores it's data.
+If you would decide it is better to change the ordering of the columns, or add a new column in between them you would need to rewrite this code as well.
+The tricky thing is that these are changes to the layout.
+You do not expect that a change to the layout would break editing or adding contacts, so you might not test this, and the code would still work because both name and address are a QString, but the behaviour is now completely different from what you intended.
+In other words, this code violates the [single-responsibiliy principle](https://en.wikipedia.org/wiki/Single-responsibility_principle).
+
+## Decoupling
+We can simplify this code and fix the coupling by creating a `TableModel::addContact` method.
+Let's look at this method and the simplified version of `AddressWidget::addEntry`.
 
 {% highlight c++ %}
 void TableModel::addContact(const Contact& contact) {
@@ -87,6 +96,8 @@ void AddressWidget::addEntry(const QString &name, const QString &address)
 In `addEntry`, we can replace the whole sequence for adding a contact with a simple call to `table->addContact`.
 With this approach the internals of `TableModel` can now safely be changed without having to modify `AddressWidget` and we have created more readable code!
 
-Now, there is a reason for using the `TableModel::setData` function. As we will see in the next post it is used to make models editable.
+Now, there is a reason for using the `TableModel::setData` function.
+If a model is editable, the view uses `setData` to modify it's data.
+This works really nicely and maybe I will write a short post about it, but until then you can check the [repository](https://www.github.com/nouwaarom/Qt-Addressbook-Example) for this project to see how it is used.
 
 Thank you for reading. If you have questions or suggestions, please open an issue or mergerequest on the [repository]({{ site.repo }}) for this site.
