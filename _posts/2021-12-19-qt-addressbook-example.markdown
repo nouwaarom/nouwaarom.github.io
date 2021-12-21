@@ -10,14 +10,14 @@ categories: qt
 In this post I want to discuss the Qt6 [addressbook example](https://doc.qt.io/qt-6/qtwidgets-itemviews-addressbook-example.html), which is used to explain model/view in Qt.
 I will show how we can modify this example to a more maintainable architecture by decoupling the widget and the model.
 The original example can be found in Qt creator.
-The modified code can be found at my [github](https://www.github.com/nouwaarom/Qt-Addressbook-Example).
+The modified code can be found at my [GitHub](https://www.github.com/nouwaarom/Qt-Addressbook-Example).
 
 <!--more-->
 
-In the example the TableView is used to implement a simple addressbook wich is sorted by alphabet groups (abc-def-ghi-...), it demonstrates how a view can be sorted by a sort and filter proxy. While the code shows how to use a QTableView and QSortFilterProxyModel, the implemenation violates the [single-responsibiliy principle](https://en.wikipedia.org/wiki/Single-responsibility_principle).
+In the example, the TableView is used to implement a simple addressbook which is sorted by alphabet groups (abc-def-ghi-...). It demonstrates how a view can be sorted by a sort and filter proxy. While the code shows how to use a QTableView and QSortFilterProxyModel, the implemenation violates the [single-responsibiliy principle](https://en.wikipedia.org/wiki/Single-responsibility_principle).
 In this post, we will discover how to decouple the tablemodel from the widget.
 
-![Screenshot](/assets/img/addressbook.png){:width="60%", .align-center}
+![Screenshot of the addressbook application](/assets/img/addressbook.png){:width="60%", .align-center}
 
 The main classes of this example are:
 - `AddressWidget`, which is a `QTabWidget` and is responsible for connecting the model and view.
@@ -47,8 +47,8 @@ void AddressWidget::addEntry(const QString &name, const QString &address)
         QMessageBox::information(this, tr("Duplicate Name"),
             tr("The name \"%1\" already exists.").arg(name));
     }
-}
 //ENDFOLD
+}
 {% endhighlight %}
 {% endfold_highlight %}
 Let me try to clarify this code a bit. The property `table` holds a `TableModel`.
@@ -58,11 +58,15 @@ The function `TableModel::insertRows` adds a new, empty, row.
 The function `TableModel::setData` sets the data for a specific row and column. The first column contains the name and the second column contains the address.
 
 ## Why coupling is not ideal 
-The problem with this code is that because of this `AddressWidget` needs to be aware of how `TableModel` stores it's data.
-If you would decide it is better to change the ordering of the columns, or add a new column in between them you would need to rewrite this code as well.
+The problem with this code is that `AddressWidget` sets data to a specific row and column index.
+This means it needs to be aware of how `TableModel` stores its data.
+If you would decide it is better to change the ordering of the columns, or add a new column in between them, you would need to rewrite the `AddressWidget` as well.
 The tricky thing is that these are changes to the layout.
-You do not expect that a change to the layout would break editing or adding contacts, so you might not test this, and the code would still work because both name and address are a QString, but the behaviour is now completely different from what you intended.
-In other words, this code violates the [single-responsibiliy principle](https://en.wikipedia.org/wiki/Single-responsibility_principle).
+You do not expect that a change to the layout would break editing or adding contacts, so you might not test this.
+Evenmore, the code would still work because both name and address are a QString, but the behaviour is now completely different from what you intended.
+
+In other words, this code violates the [single-responsibiliy principle](https://en.wikipedia.org/wiki/Single-responsibility_principle):
+The view reposibility should be limited to the `TableModel` (the *view* model), and the `AddressWidget` should only be responsible for providing the correct data to the view model.
 
 ## Decoupling
 We can simplify this code and fix the coupling by creating a `TableModel::addContact` method.
