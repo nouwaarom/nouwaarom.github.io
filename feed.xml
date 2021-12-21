@@ -5,7 +5,7 @@
   
   <link href="https://nouwaarom.com/feed.xml" rel="self" type="application/atom+xml" />
   <link href="https://nouwaarom.com/" rel="alternate" type="text/html" />
-  <updated>2021-12-20T17:59:59-06:00</updated>
+  <updated>2021-12-21T05:12:36-06:00</updated>
   <id>https://nouwaarom.com//</id>
 
   
@@ -33,14 +33,14 @@
       <content type="html" xml:base="https://nouwaarom.com/qt/2021/12/19/qt-addressbook-example.html">&lt;p&gt;In this post I want to discuss the Qt6 &lt;a href=&quot;https://doc.qt.io/qt-6/qtwidgets-itemviews-addressbook-example.html&quot;&gt;addressbook example&lt;/a&gt;, which is used to explain model/view in Qt.
 I will show how we can modify this example to a more maintainable architecture by decoupling the widget and the model.
 The original example can be found in Qt creator.
-The modified code can be found at my &lt;a href=&quot;https://www.github.com/nouwaarom/Qt-Addressbook-Example&quot;&gt;github&lt;/a&gt;.&lt;/p&gt;
+The modified code can be found at my &lt;a href=&quot;https://www.github.com/nouwaarom/Qt-Addressbook-Example&quot;&gt;GitHub&lt;/a&gt;.&lt;/p&gt;
 
 &lt;!--more--&gt;
 
-&lt;p&gt;In the example the TableView is used to implement a simple addressbook wich is sorted by alphabet groups (abc-def-ghi-…), it demonstrates how a view can be sorted by a sort and filter proxy. While the code shows how to use a QTableView and QSortFilterProxyModel, the implemenation violates the &lt;a href=&quot;https://en.wikipedia.org/wiki/Single-responsibility_principle&quot;&gt;single-responsibiliy principle&lt;/a&gt;.
+&lt;p&gt;In the example, the TableView is used to implement a simple addressbook which is sorted by alphabet groups (abc-def-ghi-…). It demonstrates how a view can be sorted by a sort and filter proxy. While the code shows how to use a QTableView and QSortFilterProxyModel, the implemenation violates the &lt;a href=&quot;https://en.wikipedia.org/wiki/Single-responsibility_principle&quot;&gt;single-responsibiliy principle&lt;/a&gt;.
 In this post, we will discover how to decouple the tablemodel from the widget.&lt;/p&gt;
 
-&lt;p&gt;&lt;img src=&quot;/assets/img/addressbook.png&quot; alt=&quot;Screenshot&quot; class=&quot;align-center&quot; /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img src=&quot;/assets/img/addressbook.png&quot; alt=&quot;Screenshot of the addressbook application&quot; class=&quot;align-center&quot; /&gt;&lt;/p&gt;
 
 &lt;p&gt;The main classes of this example are:&lt;/p&gt;
 &lt;ul&gt;
@@ -71,8 +71,8 @@ Take a look at &lt;code class=&quot;highlighter-rouge&quot;&gt;AddressWidget::ad
         &lt;span class=&quot;n&quot;&gt;QMessageBox&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;information&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;this&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;tr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Duplicate Name&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;),&lt;/span&gt;
             &lt;span class=&quot;n&quot;&gt;tr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;The name &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;%1&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s&quot;&gt; already exists.&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;).&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;arg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;name&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;));&lt;/span&gt;
     &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
-&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
-&lt;/details&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
+&lt;/details&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;
 
 &lt;p&gt;Let me try to clarify this code a bit. The property &lt;code class=&quot;highlighter-rouge&quot;&gt;table&lt;/code&gt; holds a &lt;code class=&quot;highlighter-rouge&quot;&gt;TableModel&lt;/code&gt;.
 First there is a check of a contact with this data is already in the model and only if there isn’t, the data is added.
@@ -81,11 +81,15 @@ The function &lt;code class=&quot;highlighter-rouge&quot;&gt;TableModel::insertR
 The function &lt;code class=&quot;highlighter-rouge&quot;&gt;TableModel::setData&lt;/code&gt; sets the data for a specific row and column. The first column contains the name and the second column contains the address.&lt;/p&gt;
 
 &lt;h2 id=&quot;why-coupling-is-not-ideal&quot;&gt;Why coupling is not ideal&lt;/h2&gt;
-&lt;p&gt;The problem with this code is that because of this &lt;code class=&quot;highlighter-rouge&quot;&gt;AddressWidget&lt;/code&gt; needs to be aware of how &lt;code class=&quot;highlighter-rouge&quot;&gt;TableModel&lt;/code&gt; stores it’s data.
-If you would decide it is better to change the ordering of the columns, or add a new column in between them you would need to rewrite this code as well.
+&lt;p&gt;The problem with this code is that &lt;code class=&quot;highlighter-rouge&quot;&gt;AddressWidget&lt;/code&gt; sets data to a specific row and column index.
+This means it needs to be aware of how &lt;code class=&quot;highlighter-rouge&quot;&gt;TableModel&lt;/code&gt; stores its data.
+If you would decide it is better to change the ordering of the columns, or add a new column in between them, you would need to rewrite the &lt;code class=&quot;highlighter-rouge&quot;&gt;AddressWidget&lt;/code&gt; as well.
 The tricky thing is that these are changes to the layout.
-You do not expect that a change to the layout would break editing or adding contacts, so you might not test this, and the code would still work because both name and address are a QString, but the behaviour is now completely different from what you intended.
-In other words, this code violates the &lt;a href=&quot;https://en.wikipedia.org/wiki/Single-responsibility_principle&quot;&gt;single-responsibiliy principle&lt;/a&gt;.&lt;/p&gt;
+You do not expect that a change to the layout would break editing or adding contacts, so you might not test this.
+Evenmore, the code would still work because both name and address are a QString, but the behaviour is now completely different from what you intended.&lt;/p&gt;
+
+&lt;p&gt;In other words, this code violates the &lt;a href=&quot;https://en.wikipedia.org/wiki/Single-responsibility_principle&quot;&gt;single-responsibiliy principle&lt;/a&gt;:
+The view reposibility should be limited to the &lt;code class=&quot;highlighter-rouge&quot;&gt;TableModel&lt;/code&gt; (the &lt;em&gt;view&lt;/em&gt; model), and the &lt;code class=&quot;highlighter-rouge&quot;&gt;AddressWidget&lt;/code&gt; should only be responsible for providing the correct data to the view model.&lt;/p&gt;
 
 &lt;h2 id=&quot;decoupling&quot;&gt;Decoupling&lt;/h2&gt;
 &lt;p&gt;We can simplify this code and fix the coupling by creating a &lt;code class=&quot;highlighter-rouge&quot;&gt;TableModel::addContact&lt;/code&gt; method.
@@ -138,7 +142,7 @@ This works really nicely and maybe I will write a short post about it, but until
       
 
       
-        <summary type="html">In this post I want to discuss the Qt6 addressbook example, which is used to explain model/view in Qt. I will show how we can modify this example to a more maintainable architecture by decoupling the widget and the model. The original example can be found in Qt creator. The modified code can be found at my github.</summary>
+        <summary type="html">In this post I want to discuss the Qt6 addressbook example, which is used to explain model/view in Qt. I will show how we can modify this example to a more maintainable architecture by decoupling the widget and the model. The original example can be found in Qt creator. The modified code can be found at my GitHub.</summary>
       
 
       

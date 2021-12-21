@@ -95,14 +95,14 @@
     <p>In this post I want to discuss the Qt6 <a href="https://doc.qt.io/qt-6/qtwidgets-itemviews-addressbook-example.html">addressbook example</a>, which is used to explain model/view in Qt.
 I will show how we can modify this example to a more maintainable architecture by decoupling the widget and the model.
 The original example can be found in Qt creator.
-The modified code can be found at my <a href="https://www.github.com/nouwaarom/Qt-Addressbook-Example">github</a>.</p>
+The modified code can be found at my <a href="https://www.github.com/nouwaarom/Qt-Addressbook-Example">GitHub</a>.</p>
 
 <!--more-->
 
-<p>In the example the TableView is used to implement a simple addressbook wich is sorted by alphabet groups (abc-def-ghi-…), it demonstrates how a view can be sorted by a sort and filter proxy. While the code shows how to use a QTableView and QSortFilterProxyModel, the implemenation violates the <a href="https://en.wikipedia.org/wiki/Single-responsibility_principle">single-responsibiliy principle</a>.
+<p>In the example, the TableView is used to implement a simple addressbook which is sorted by alphabet groups (abc-def-ghi-…). It demonstrates how a view can be sorted by a sort and filter proxy. While the code shows how to use a QTableView and QSortFilterProxyModel, the implemenation violates the <a href="https://en.wikipedia.org/wiki/Single-responsibility_principle">single-responsibiliy principle</a>.
 In this post, we will discover how to decouple the tablemodel from the widget.</p>
 
-<p><img src="/assets/img/addressbook.png" alt="Screenshot" class="align-center" /></p>
+<p><img src="/assets/img/addressbook.png" alt="Screenshot of the addressbook application" class="align-center" /></p>
 
 <p>The main classes of this example are:</p>
 <ul>
@@ -133,8 +133,8 @@ Take a look at <code class="highlighter-rouge">AddressWidget::addEntry</code> fo
         <span class="n">QMessageBox</span><span class="o">::</span><span class="n">information</span><span class="p">(</span><span class="k">this</span><span class="p">,</span> <span class="n">tr</span><span class="p">(</span><span class="s">"Duplicate Name"</span><span class="p">),</span>
             <span class="n">tr</span><span class="p">(</span><span class="s">"The name </span><span class="se">\"</span><span class="s">%1</span><span class="se">\"</span><span class="s"> already exists."</span><span class="p">).</span><span class="n">arg</span><span class="p">(</span><span class="n">name</span><span class="p">));</span>
     <span class="p">}</span>
-<span class="p">}</span>
-</details></code></pre></figure>
+</details>
+<span class="p">}</span></code></pre></figure>
 
 <p>Let me try to clarify this code a bit. The property <code class="highlighter-rouge">table</code> holds a <code class="highlighter-rouge">TableModel</code>.
 First there is a check of a contact with this data is already in the model and only if there isn’t, the data is added.
@@ -143,11 +143,15 @@ The function <code class="highlighter-rouge">TableModel::insertRows</code> adds 
 The function <code class="highlighter-rouge">TableModel::setData</code> sets the data for a specific row and column. The first column contains the name and the second column contains the address.</p>
 
 <h2 id="why-coupling-is-not-ideal">Why coupling is not ideal</h2>
-<p>The problem with this code is that because of this <code class="highlighter-rouge">AddressWidget</code> needs to be aware of how <code class="highlighter-rouge">TableModel</code> stores it’s data.
-If you would decide it is better to change the ordering of the columns, or add a new column in between them you would need to rewrite this code as well.
+<p>The problem with this code is that <code class="highlighter-rouge">AddressWidget</code> sets data to a specific row and column index.
+This means it needs to be aware of how <code class="highlighter-rouge">TableModel</code> stores its data.
+If you would decide it is better to change the ordering of the columns, or add a new column in between them, you would need to rewrite the <code class="highlighter-rouge">AddressWidget</code> as well.
 The tricky thing is that these are changes to the layout.
-You do not expect that a change to the layout would break editing or adding contacts, so you might not test this, and the code would still work because both name and address are a QString, but the behaviour is now completely different from what you intended.
-In other words, this code violates the <a href="https://en.wikipedia.org/wiki/Single-responsibility_principle">single-responsibiliy principle</a>.</p>
+You do not expect that a change to the layout would break editing or adding contacts, so you might not test this.
+Evenmore, the code would still work because both name and address are a QString, but the behaviour is now completely different from what you intended.</p>
+
+<p>In other words, this code violates the <a href="https://en.wikipedia.org/wiki/Single-responsibility_principle">single-responsibiliy principle</a>:
+The view reposibility should be limited to the <code class="highlighter-rouge">TableModel</code> (the <em>view</em> model), and the <code class="highlighter-rouge">AddressWidget</code> should only be responsible for providing the correct data to the view model.</p>
 
 <h2 id="decoupling">Decoupling</h2>
 <p>We can simplify this code and fix the coupling by creating a <code class="highlighter-rouge">TableModel::addContact</code> method.
