@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "WIP: Semihosting: printing with puts" 
+title:  "Semihosting: Printing to stdout" 
 date:   2021-02-05
 draft: true
 description: "When using printf() when semihosting the printf function uses semihosting functions to print to the PC console. We will investigate how this works."
@@ -9,10 +9,11 @@ categories: embedded c semihosting puts
 
 This is part two of a series, part one can be found [here]({{ site.baseurl }}{% link _posts/2021-01-30-investigating-semihosting.markdown %}).
 In this post we will investigate how we can print using semihosting.
-In the previous post we noticed that *puts* was used to print a string using semihosting.
-Let us look at the definition of *puts*, which can be found in [puts.c](https://github.com/mirror/newlib-cygwin/blob/master/newlib/libc/stdio/puts.c).
+In the previous post we noticed that *puts* was used to print a string to stdout.
 <!--more-->
 
+## Reentrancy and opening stdout
+Let us look at the definition of *puts*, which can be found in [puts.c](https://github.com/mirror/newlib-cygwin/blob/master/newlib/libc/stdio/puts.c).
 {% highlight c %}
 int
 puts (char const * s)
@@ -25,7 +26,7 @@ The function *_puts_r* is reentrant. But what does it mean that a function is re
 > In computing, a computer program or subroutine is called reentrant if multiple invocations can safely run concurrently on a single processor system, where a reentrant procedure can be interrupted in the middle of its execution and then safely be called again ("re-entered") before its previous invocations complete execution. - Wikipedia
 
 It is very important that this function is reentrant as we want to be able to use it from the main loop and in interrupt handlers without our system crashing.
-We will investigate how reentrancy is guaranteed for this function below.
+We will investigate how reentrancy is guaranteed for this function.
 
 {% fold_highlight %}
 {% highlight c %}
@@ -123,18 +124,284 @@ err:
 {% endhighlight %}
 {% endfold_highlight %}
 
-Let us first look at the preprocessor statements.
+Let us first look at the preprocessor statements to see which code will get compiled.
 There is a conditional compilation on *_FVWRITE_IN_STREAMIO*.
 With some googeling we find that this flag can be used to disable the io vector buffer. [source](https://sourceware.org/legacy-ml/newlib/2013/msg00146.html)
 It turns out the buffer is available for newlib but not for newlib nano.
-
 For the sake of simplicity we will explore the case without a buffer.
 The flow of this function is a follows:
+- Make sure the file to write to (stdout) is open.
 - Get a lock on the file we want to write to.
 - Write the string to this file character by character.
 - Release the lock on the file.
 
-## Locking a file
+## Making sure stdout is open
+At the top of *_puts_r* we notice this code.
+{% highlight c %}
+  FILE *fp;
+  _REENT_SMALL_CHECK_INIT (ptr);
+
+  fp = _stdout_r (ptr);
+  CHECK_INIT (ptr, fp);
+{% endhighlight %}
+First a file pointer is created. The _REENT_SMALL_CHECK_INIT(ptr) does nothing for our compile flags, so we ignore it.
+The statement *_stdout_r* is defined in `stdio.h` as follows: 
+{% highlight c %}
+#define _stdout_r(x)	((x)->_stdout)
+{% endhighlight %}
+Which in our case expands to *ptr->_stdout*.
+
+### The reentrancy struct
+Notice that *ptr* is reference to the reentrancy structure (*_REENT*).
+The macro *_REENT* expands to a global variable of type *struct _reent\**
+The global variable is defined in `impure.c` as:
+{% highlight c %}
+static struct _reent __ATTRIBUTE_IMPURE_DATA__ impure_data = _REENT_INIT (impure_data);
+
+struct _reent *__ATTRIBUTE_IMPURE_PTR__ _impure_ptr = &impure_data;
+{% endhighlight %}
+This structure is quite large. The definition is in `newlib/libc/include/sys/reent.h`
+
+{% fold_highlight %}
+{% highlight c %}
+struct _reent
+{
+  int _errno;			/* local copy of errno */
+
+  /* FILE is a big struct and may change over time.  To try to achieve binary
+     compatibility with future versions, put stdin,stdout,stderr here.
+     These are pointers into member __sf defined below.  */
+  __FILE *_stdin, *_stdout, *_stderr;
+
+//FOLD
+  int  _inc;			/* used by tmpnam */
+  char _emergency[_REENT_EMERGENCY_SIZE];
+
+  /* TODO */
+  int _unspecified_locale_info;	/* unused, reserved for locale stuff */
+  struct __locale_t *_locale;/* per-thread locale */
+//ENDFOLD
+  int __sdidinit;		/* 1 means stdio has been init'd */
+
+//FOLD
+  void (*__cleanup) (struct _reent *);
+
+  /* used by mprec routines */
+  struct _Bigint *_result;
+  int _result_k;
+  struct _Bigint *_p5s;
+  struct _Bigint **_freelist;
+
+  /* used by some fp conversion routines */
+  int _cvtlen;			/* should be size_t */
+  char *_cvtbuf;
+
+  union
+    {
+      struct
+        {
+          unsigned int _unused_rand;
+          char * _strtok_last;
+          char _asctime_buf[_REENT_ASCTIME_SIZE];
+          struct __tm _localtime_buf;
+          int _gamma_signgam;
+          __extension__ unsigned long long _rand_next;
+          struct _rand48 _r48;
+          _mbstate_t _mblen_state;
+          _mbstate_t _mbtowc_state;
+          _mbstate_t _wctomb_state;
+          char _l64a_buf[8];
+          char _signal_buf[_REENT_SIGNAL_SIZE];
+          int _getdate_err;
+          _mbstate_t _mbrlen_state;
+          _mbstate_t _mbrtowc_state;
+          _mbstate_t _mbsrtowcs_state;
+          _mbstate_t _wcrtomb_state;
+          _mbstate_t _wcsrtombs_state;
+	  int _h_errno;
+        } _reent;
+  /* Two next two fields were once used by malloc.  They are no longer
+     used. They are used to preserve the space used before so as to
+     allow addition of new reent fields and keep binary compatibility.   */
+      struct
+        {
+#define _N_LISTS 30
+          unsigned char * _nextf[_N_LISTS];
+          unsigned int _nmalloc[_N_LISTS];
+        } _unused;
+    } _new;
+
+# ifndef _REENT_GLOBAL_ATEXIT
+  /* atexit stuff */
+  struct _atexit *_atexit;	/* points to head of LIFO stack */
+  struct _atexit _atexit0;	/* one guaranteed table, required by ANSI */
+# endif
+
+  /* signal info */
+  void (**(_sig_func))(int);
+
+  /* These are here last so that __FILE can grow without changing the offsets
+     of the above members (on the off chance that future binary compatibility
+     would be broken otherwise).  */
+  struct _glue __sglue;		/* root of glue chain */
+//ENDFOLD
+# ifndef _REENT_GLOBAL_STDIO_STREAMS
+  __FILE __sf[3];  		/* first three file descriptors */
+# endif
+};
+{% endhighlight %}
+{% endfold_highlight %}
+
+This reentrancy struct is initialized by *_REENT_INIT*, which is defined in `reent.h`. 
+In this macro the *_stdin*, *_stdout*, and *_stderror* elements are initialized with the addresses of *__sf[0]*, *__sf[1]* and *__sf[2]* respectively.
+This means that these file pointers point to valid blocks of memory.
+
+### Opening stdin, stdout and stderr
+The files themeselves are not initialized yet, this is done by *CHECK_INIT(ptr)*.
+This function checks if stdio is marked initialized, and if not initializes it:
+{% highlight c %}
+#define CHECK_INIT(ptr) \
+#define CHECK_INIT(ptr, fp) \
+  do								\
+    {								\
+      struct _reent *_check_init_ptr = (ptr);			\
+      if ((_check_init_ptr) && !(_check_init_ptr)->__sdidinit)	\
+	__sinit (_check_init_ptr);				\
+    }								\
+  while (0)
+{% endhighlight %}
+This weird looking do-while loop is added so that we can use this macro with a semicolon without a syntax error, as explained [here](https://stackoverflow.com/questions/154136/why-use-apparently-meaningless-do-while-and-if-else-statements-in-macros).
+
+The definition of *__sinit* can be found in `findfp.c`:
+{% fold_highlight %}
+{% highlight c %}
+/*
+ * __sinit() is called whenever stdio's internal variables must be set up.
+ */
+void
+__sinit (struct _reent *s)
+{
+  __sinit_lock_acquire ();
+
+  if (s->__sdidinit)
+    {
+      __sinit_lock_release ();
+      return;
+    }
+
+//FOLD
+  /* make sure we clean up on exit */
+  s->__cleanup = _cleanup_r;	/* conservative */
+
+  s->__sglue._next = NULL;
+#ifndef _REENT_SMALL
+# ifndef _REENT_GLOBAL_STDIO_STREAMS
+  s->__sglue._niobs = 3;
+  s->__sglue._iobs = &s->__sf[0];
+# endif /* _REENT_GLOBAL_STDIO_STREAMS */
+#else
+  s->__sglue._niobs = 0;
+  s->__sglue._iobs = NULL;
+  /* Avoid infinite recursion when calling __sfp  for _GLOBAL_REENT.  The
+     problem is that __sfp checks for _GLOBAL_REENT->__sdidinit and calls
+     __sinit if it's 0. */
+  if (s == _GLOBAL_REENT)
+    s->__sdidinit = 1;
+# ifndef _REENT_GLOBAL_STDIO_STREAMS
+  s->_stdin = __sfp(s);
+  s->_stdout = __sfp(s);
+  s->_stderr = __sfp(s);
+# else /* _REENT_GLOBAL_STDIO_STREAMS */
+  s->_stdin = &__sf[0];
+  s->_stdout = &__sf[1];
+  s->_stderr = &__sf[2];
+# endif /* _REENT_GLOBAL_STDIO_STREAMS */
+#endif
+
+#ifdef _REENT_GLOBAL_STDIO_STREAMS
+  if (__sf[0]._cookie == NULL) {
+    _GLOBAL_REENT->__sglue._niobs = 3;
+    _GLOBAL_REENT->__sglue._iobs = &__sf[0];
+    stdin_init (&__sf[0]);
+    stdout_init (&__sf[1]);
+    stderr_init (&__sf[2]);
+  }
+//ENDFOLD
+#else /* _REENT_GLOBAL_STDIO_STREAMS */
+  stdin_init (s->_stdin);
+  stdout_init (s->_stdout);
+  stderr_init (s->_stderr);
+#endif /* _REENT_GLOBAL_STDIO_STREAMS */
+
+  s->__sdidinit = 1;
+
+  __sinit_lock_release ();
+}
+{% endhighlight %}
+{% endfold_highlight %}
+The purpose of this post is researching how printing works, so we will discuss how stdout is opened. The code for stdin and stderr is very similar.
+The only thing that *stdout_init* does is calling.
+{% highlight c %}
+  std (ptr, __SWR | __SLBF, 1);
+{% endhighlight %}
+The two flags mean that the file can be written to and that it is line buffered.
+This means that the actual write will occur only when a newline character occurs (or a flush is executed).
+
+{% fold_highlight %}
+{% highlight c %}
+static void
+std (FILE *ptr,
+            int flags,
+            int file)
+{
+  ptr->_p = 0;
+  ptr->_r = 0;
+  ptr->_w = 0;
+  ptr->_flags = flags;
+  ptr->_flags2 = 0;
+  ptr->_file = file;
+  ptr->_bf._base = 0;
+  ptr->_bf._size = 0;
+  ptr->_lbfsize = 0;
+  memset (&ptr->_mbstate, 0, sizeof (_mbstate_t));
+  ptr->_cookie = ptr;
+  ptr->_read = __sread;
+#ifndef __LARGE64_FILES
+  ptr->_write = __swrite;
+#else /* __LARGE64_FILES */
+//FOLD
+  ptr->_write = __swrite64;
+  ptr->_seek64 = __sseek64;
+  ptr->_flags |= __SL64;
+//ENDFOLD
+#endif /* __LARGE64_FILES */
+  ptr->_seek = __sseek;
+#ifdef _STDIO_CLOSE_PER_REENT_STD_STREAMS
+  ptr->_close = __sclose;
+#else /* _STDIO_CLOSE_STD_STREAMS */
+  ptr->_close = NULL;
+#endif /* _STDIO_CLOSE_STD_STREAMS */
+#if !defined(__SINGLE_THREAD__) && !(defined(_REENT_SMALL) && !defined(_REENT_GLOBAL_STDIO_STREAMS))
+  __lock_init_recursive (ptr->_lock);
+  /*
+   * #else
+   * lock is already initialized in __sfp
+   */
+#endif
+
+//FOLD
+#ifdef __SCLE
+  if (__stextmode (ptr->_file))
+    ptr->_flags |= __SCLE;
+#endif
+//ENDFOLD
+}
+{% endhighlight %}
+{% endfold_highlight %}
+
+Now we know how the file is opened and initialized and how all function pointers are set, let us continue our exploration.
+
+## Locking a file (intermezzo)
 The functions *_newlib_flockfile_start* and *_newlib_flockfile_end* are used for file locking.
 These functions are defined in `newlib/libc/stdio/local.h`, the implementation of *_flockfile* and *_funlockfile* are found in `newlib/libc/include/sys/stdio.h`.
 We will combine them to make things a bit easier to read.
@@ -157,25 +424,38 @@ We will combine them to make things a bit easier to read.
 #define _funlockfile(fp) (((fp)->_flags & __SSTR) ? 0 : __lock_release_recursive((fp)->_lock))
 {% endhighlight %}
 I found it quite cool that *_start* and *_end* define a scope together so that you have cannot forget to do an *_end*.
+It is not in the scope of this article to discuss the locking methods used, so we will not explain this further here.
 
-
-## Reentrancy
-Reentrancy code is in `newlib/libc/include/sys/reent.h`
 
 ## Printing a character 
+Remember that in *_puts_r* all characters are written out with the following loop:
+{% highlight c %}
+  while (*p)
+    {
+      if (__sputc_r (ptr, *p++, fp) == EOF)
+	goto err;
+    }
+  if (__sputc_r (ptr, '\n', fp) == EOF)
+    goto err;
+{% endhighlight %}
+
 The definition of *sputc_r* can be found at `newlib/libc/include/sys/stdio.h`.
+{% fold_highlight %}
 {% highlight c %}
 _ELIDABLE_INLINE int __sputc_r(struct _reent *_ptr, int _c, FILE *_p) {
+//FOLD
 #ifdef __SCLE
     if ((_p->_flags & __SCLE) && _c == '\n')
       __sputc_r (_ptr, '\r', _p);
 #endif
+//ENDFOLD
     if (--_p->_w >= 0 || (_p->_w >= _p->_lbfsize && (char)_c != '\n'))
         return (*_p->_p++ = _c);
     else
         return (__swbuf_r(_ptr, _c, _p));
 }
 {% endhighlight %}
+{% endfold_highlight %}
 
 The implementation of *__swbuf_r* can be found in `newlib/libc/stdio/wbuf.c`.
 {% highlight c %}
