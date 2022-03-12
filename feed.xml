@@ -5,7 +5,7 @@
   
   <link href="https://nouwaarom.com/feed.xml" rel="self" type="application/atom+xml" />
   <link href="https://nouwaarom.com/" rel="alternate" type="text/html" />
-  <updated>2021-12-21T05:12:36-06:00</updated>
+  <updated>2022-03-12T17:26:45-06:00</updated>
   <id>https://nouwaarom.com//</id>
 
   
@@ -175,7 +175,7 @@ In this post I will dig deeper in to how it works.
 &lt;p&gt;We start with an example of how to use semihosting after that we will investigate what is going on.
 Consider the following piece of code (&lt;code class=&quot;highlighter-rouge&quot;&gt;main.c&lt;/code&gt;). Which uses semihosting to print over the debug console.&lt;/p&gt;
 
-&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;span class=&quot;cp&quot;&gt;#include &amp;lt;stdio.h&amp;gt;
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;span class=&quot;cp&quot;&gt;#include&lt;/span&gt; &lt;span class=&quot;cpf&quot;&gt;&amp;lt;stdio.h&amp;gt;&lt;/span&gt;&lt;span class=&quot;cp&quot;&gt;
 &lt;/span&gt;&lt;span class=&quot;k&quot;&gt;extern&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;initialise_monitor_handles&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
 &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
     &lt;span class=&quot;n&quot;&gt;initialise_monitor_handles&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
@@ -282,7 +282,7 @@ Notice that in the same folder as, &lt;code class=&quot;highlighter-rouge&quot;&
 We can find its implementation in
 The implementation of this function in newlib can be found at &lt;a href=&quot;https://github.com/mirror/newlib-cygwin/blob/master/newlib/libc/sys/arm/swi.h&quot;&gt;newlib/libc/sys/arm/swi.h&lt;/a&gt;.&lt;/p&gt;
 
-&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;span class=&quot;cp&quot;&gt;#include &quot;arm.h&quot;
+&lt;figure class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;span class=&quot;cp&quot;&gt;#include&lt;/span&gt; &lt;span class=&quot;cpf&quot;&gt;&quot;arm.h&quot;&lt;/span&gt;&lt;span class=&quot;cp&quot;&gt;
 &lt;/span&gt;
 &lt;span class=&quot;cm&quot;&gt;/* SWI numbers for RDP (Demon) monitor.
  *

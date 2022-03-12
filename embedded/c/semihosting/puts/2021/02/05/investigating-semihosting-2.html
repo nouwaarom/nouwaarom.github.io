@@ -9,7 +9,7 @@
   
   
   
-  <title>WIP: Semihosting: printing with puts</title>
+  <title>Semihosting: Printing to stdout</title>
   <meta name="description" content="When using printf() when semihosting the printf function uses semihosting functions to print to the PC console. We will investigate how this works.">
   
 
@@ -22,7 +22,7 @@
   
 
   
-  <meta property="og:title" content="WIP: Semihosting: printing with puts">
+  <meta property="og:title" content="Semihosting: Printing to stdout">
   <meta property="og:site_name" content="Now why?">
   <meta property="og:url" content="https://nouwaarom.com/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html">
   <meta property="og:description" content="When using printf() when semihosting the printf function uses semihosting functions to print to the PC console. We will investigate how this works.">
@@ -30,7 +30,7 @@
   
   <meta name="twitter:card" content="summary">
   <meta name="twitter:site" content="">
-  <meta name="twitter:title" content="WIP: Semihosting: printing with puts">
+  <meta name="twitter:title" content="Semihosting: Printing to stdout">
   <meta name="twitter:description" content="When using printf() when semihosting the printf function uses semihosting functions to print to the PC console. We will investigate how this works.">
   
     <meta name="twitter:creator" content="">
@@ -78,7 +78,7 @@
 
   <header class="post-header">
     
-      <h1 class="post-title" itemprop="name headline">WIP: Semihosting: printing with puts</h1>
+      <h1 class="post-title" itemprop="name headline">Semihosting: Printing to stdout</h1>
     
     <p class="post-meta"><time datetime="2021-02-05T00:00:00-06:00" itemprop="datePublished">Feb 5, 2021</time> •
   
@@ -103,9 +103,11 @@
   <div class="post-content" itemprop="articleBody">
     <p>This is part two of a series, part one can be found <a href="/embedded/c/initialize_monitor_handles/2021/01/30/investigating-semihosting.html">here</a>.
 In this post we will investigate how we can print using semihosting.
-In the previous post we noticed that <em>puts</em> was used to print a string using semihosting.
-Let us look at the definition of <em>puts</em>, which can be found in <a href="https://github.com/mirror/newlib-cygwin/blob/master/newlib/libc/stdio/puts.c">puts.c</a>.
+In the previous post we noticed that <em>puts</em> was used to print a string to stdout.
 <!--more--></p>
+
+<h2 id="reentrancy-and-opening-stdout">Reentrancy and opening stdout</h2>
+<p>Let us look at the definition of <em>puts</em>, which can be found in <a href="https://github.com/mirror/newlib-cygwin/blob/master/newlib/libc/stdio/puts.c">puts.c</a>.</p>
 
 <figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="kt">int</span>
 <span class="nf">puts</span> <span class="p">(</span><span class="kt">char</span> <span class="k">const</span> <span class="o">*</span> <span class="n">s</span><span class="p">)</span>
@@ -120,7 +122,7 @@ The function <em>_puts_r</em> is reentrant. But what does it mean that a functio
 </blockquote>
 
 <p>It is very important that this function is reentrant as we want to be able to use it from the main loop and in interrupt handlers without our system crashing.
-We will investigate how reentrancy is guaranteed for this function below.</p>
+We will investigate how reentrancy is guaranteed for this function.</p>
 
 <figure class="highlight"><pre><code class="language-c" data-lang="c"><details><summary><span class="c1">...</span></summary>
 <span class="cm">/*
@@ -143,12 +145,12 @@ Supporting OS subroutines required: &lt;&lt;close&gt;&gt;, &lt;&lt;fstat&gt;&gt;
 &lt;&lt;lseek&gt;&gt;, &lt;&lt;read&gt;&gt;, &lt;&lt;sbrk&gt;&gt;, &lt;&lt;write&gt;&gt;.
 */</span>
 
-<span class="cp">#include &lt;_ansi.h&gt;
-#include &lt;reent.h&gt;
-#include &lt;stdio.h&gt;
-#include &lt;string.h&gt;
-#include "fvwrite.h"
-#include "local.h"
+<span class="cp">#include</span> <span class="cpf">&lt;_ansi.h&gt;</span><span class="cp">
+#include</span> <span class="cpf">&lt;reent.h&gt;</span><span class="cp">
+#include</span> <span class="cpf">&lt;stdio.h&gt;</span><span class="cp">
+#include</span> <span class="cpf">&lt;string.h&gt;</span><span class="cp">
+#include</span> <span class="cpf">"fvwrite.h"</span><span class="cp">
+#include</span> <span class="cpf">"local.h"</span><span class="cp">
 </span></details>
 
 <span class="cm">/*
@@ -214,20 +216,276 @@ Supporting OS subroutines required: &lt;&lt;close&gt;&gt;, &lt;&lt;fstat&gt;&gt;
 <span class="cp">#endif
 </span><span class="p">}</span></code></pre></figure>
 
-<p>Let us first look at the preprocessor statements.
+<p>Let us first look at the preprocessor statements to see which code will get compiled.
 There is a conditional compilation on <em>_FVWRITE_IN_STREAMIO</em>.
 With some googeling we find that this flag can be used to disable the io vector buffer. <a href="https://sourceware.org/legacy-ml/newlib/2013/msg00146.html">source</a>
-It turns out the buffer is available for newlib but not for newlib nano.</p>
-
-<p>For the sake of simplicity we will explore the case without a buffer.
+It turns out the buffer is available for newlib but not for newlib nano.
+For the sake of simplicity we will explore the case without a buffer.
 The flow of this function is a follows:</p>
 <ul>
+  <li>Make sure the file to write to (stdout) is open.</li>
   <li>Get a lock on the file we want to write to.</li>
   <li>Write the string to this file character by character.</li>
   <li>Release the lock on the file.</li>
 </ul>
 
-<h2 id="locking-a-file">Locking a file</h2>
+<h2 id="making-sure-stdout-is-open">Making sure stdout is open</h2>
+<p>At the top of <em>_puts_r</em> we notice this code.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c">  <span class="kt">FILE</span> <span class="o">*</span><span class="n">fp</span><span class="p">;</span>
+  <span class="n">_REENT_SMALL_CHECK_INIT</span> <span class="p">(</span><span class="n">ptr</span><span class="p">);</span>
+
+  <span class="n">fp</span> <span class="o">=</span> <span class="n">_stdout_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">);</span>
+  <span class="n">CHECK_INIT</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">);</span></code></pre></figure>
+
+<p>First a file pointer is created. The _REENT_SMALL_CHECK_INIT(ptr) does nothing for our compile flags, so we ignore it.
+The statement <em>_stdout_r</em> is defined in <code class="highlighter-rouge">stdio.h</code> as follows:</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cp">#define _stdout_r(x)	((x)-&gt;_stdout)</span></code></pre></figure>
+
+<p>Which in our case expands to <em>ptr-&gt;_stdout</em>.</p>
+
+<h3 id="the-reentrancy-struct">The reentrancy struct</h3>
+<p>Notice that <em>ptr</em> is reference to the reentrancy structure (<em>_REENT</em>).
+The macro <em>_REENT</em> expands to a global variable of type <em>struct _reent*</em>
+The global variable is defined in <code class="highlighter-rouge">impure.c</code> as:</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="k">static</span> <span class="k">struct</span> <span class="n">_reent</span> <span class="n">__ATTRIBUTE_IMPURE_DATA__</span> <span class="n">impure_data</span> <span class="o">=</span> <span class="n">_REENT_INIT</span> <span class="p">(</span><span class="n">impure_data</span><span class="p">);</span>
+
+<span class="k">struct</span> <span class="n">_reent</span> <span class="o">*</span><span class="n">__ATTRIBUTE_IMPURE_PTR__</span> <span class="n">_impure_ptr</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">impure_data</span><span class="p">;</span></code></pre></figure>
+
+<p>This structure is quite large. The definition is in <code class="highlighter-rouge">newlib/libc/include/sys/reent.h</code></p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="k">struct</span> <span class="n">_reent</span>
+<span class="p">{</span>
+  <span class="kt">int</span> <span class="n">_errno</span><span class="p">;</span>			<span class="cm">/* local copy of errno */</span>
+
+  <span class="cm">/* FILE is a big struct and may change over time.  To try to achieve binary
+     compatibility with future versions, put stdin,stdout,stderr here.
+     These are pointers into member __sf defined below.  */</span>
+  <span class="n">__FILE</span> <span class="o">*</span><span class="n">_stdin</span><span class="p">,</span> <span class="o">*</span><span class="n">_stdout</span><span class="p">,</span> <span class="o">*</span><span class="n">_stderr</span><span class="p">;</span>
+
+<details><summary><span class="c1">...</span></summary>
+  <span class="kt">int</span>  <span class="n">_inc</span><span class="p">;</span>			<span class="cm">/* used by tmpnam */</span>
+  <span class="kt">char</span> <span class="n">_emergency</span><span class="p">[</span><span class="n">_REENT_EMERGENCY_SIZE</span><span class="p">];</span>
+
+  <span class="cm">/* TODO */</span>
+  <span class="kt">int</span> <span class="n">_unspecified_locale_info</span><span class="p">;</span>	<span class="cm">/* unused, reserved for locale stuff */</span>
+  <span class="k">struct</span> <span class="n">__locale_t</span> <span class="o">*</span><span class="n">_locale</span><span class="p">;</span><span class="cm">/* per-thread locale */</span>
+</details>
+  <span class="kt">int</span> <span class="n">__sdidinit</span><span class="p">;</span>		<span class="cm">/* 1 means stdio has been init'd */</span>
+
+<details><summary><span class="c1">...</span></summary>
+  <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">__cleanup</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">_reent</span> <span class="o">*</span><span class="p">);</span>
+
+  <span class="cm">/* used by mprec routines */</span>
+  <span class="k">struct</span> <span class="n">_Bigint</span> <span class="o">*</span><span class="n">_result</span><span class="p">;</span>
+  <span class="kt">int</span> <span class="n">_result_k</span><span class="p">;</span>
+  <span class="k">struct</span> <span class="n">_Bigint</span> <span class="o">*</span><span class="n">_p5s</span><span class="p">;</span>
+  <span class="k">struct</span> <span class="n">_Bigint</span> <span class="o">**</span><span class="n">_freelist</span><span class="p">;</span>
+
+  <span class="cm">/* used by some fp conversion routines */</span>
+  <span class="kt">int</span> <span class="n">_cvtlen</span><span class="p">;</span>			<span class="cm">/* should be size_t */</span>
+  <span class="kt">char</span> <span class="o">*</span><span class="n">_cvtbuf</span><span class="p">;</span>
+
+  <span class="k">union</span>
+    <span class="p">{</span>
+      <span class="k">struct</span>
+        <span class="p">{</span>
+          <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">_unused_rand</span><span class="p">;</span>
+          <span class="kt">char</span> <span class="o">*</span> <span class="n">_strtok_last</span><span class="p">;</span>
+          <span class="kt">char</span> <span class="n">_asctime_buf</span><span class="p">[</span><span class="n">_REENT_ASCTIME_SIZE</span><span class="p">];</span>
+          <span class="k">struct</span> <span class="n">__tm</span> <span class="n">_localtime_buf</span><span class="p">;</span>
+          <span class="kt">int</span> <span class="n">_gamma_signgam</span><span class="p">;</span>
+          <span class="n">__extension__</span> <span class="kt">unsigned</span> <span class="kt">long</span> <span class="kt">long</span> <span class="n">_rand_next</span><span class="p">;</span>
+          <span class="k">struct</span> <span class="n">_rand48</span> <span class="n">_r48</span><span class="p">;</span>
+          <span class="n">_mbstate_t</span> <span class="n">_mblen_state</span><span class="p">;</span>
+          <span class="n">_mbstate_t</span> <span class="n">_mbtowc_state</span><span class="p">;</span>
+          <span class="n">_mbstate_t</span> <span class="n">_wctomb_state</span><span class="p">;</span>
+          <span class="kt">char</span> <span class="n">_l64a_buf</span><span class="p">[</span><span class="mi">8</span><span class="p">];</span>
+          <span class="kt">char</span> <span class="n">_signal_buf</span><span class="p">[</span><span class="n">_REENT_SIGNAL_SIZE</span><span class="p">];</span>
+          <span class="kt">int</span> <span class="n">_getdate_err</span><span class="p">;</span>
+          <span class="n">_mbstate_t</span> <span class="n">_mbrlen_state</span><span class="p">;</span>
+          <span class="n">_mbstate_t</span> <span class="n">_mbrtowc_state</span><span class="p">;</span>
+          <span class="n">_mbstate_t</span> <span class="n">_mbsrtowcs_state</span><span class="p">;</span>
+          <span class="n">_mbstate_t</span> <span class="n">_wcrtomb_state</span><span class="p">;</span>
+          <span class="n">_mbstate_t</span> <span class="n">_wcsrtombs_state</span><span class="p">;</span>
+	  <span class="kt">int</span> <span class="n">_h_errno</span><span class="p">;</span>
+        <span class="p">}</span> <span class="n">_reent</span><span class="p">;</span>
+  <span class="cm">/* Two next two fields were once used by malloc.  They are no longer
+     used. They are used to preserve the space used before so as to
+     allow addition of new reent fields and keep binary compatibility.   */</span>
+      <span class="k">struct</span>
+        <span class="p">{</span>
+<span class="cp">#define _N_LISTS 30
+</span>          <span class="kt">unsigned</span> <span class="kt">char</span> <span class="o">*</span> <span class="n">_nextf</span><span class="p">[</span><span class="n">_N_LISTS</span><span class="p">];</span>
+          <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">_nmalloc</span><span class="p">[</span><span class="n">_N_LISTS</span><span class="p">];</span>
+        <span class="p">}</span> <span class="n">_unused</span><span class="p">;</span>
+    <span class="p">}</span> <span class="n">_new</span><span class="p">;</span>
+
+<span class="cp"># ifndef _REENT_GLOBAL_ATEXIT
+</span>  <span class="cm">/* atexit stuff */</span>
+  <span class="k">struct</span> <span class="n">_atexit</span> <span class="o">*</span><span class="n">_atexit</span><span class="p">;</span>	<span class="cm">/* points to head of LIFO stack */</span>
+  <span class="k">struct</span> <span class="n">_atexit</span> <span class="n">_atexit0</span><span class="p">;</span>	<span class="cm">/* one guaranteed table, required by ANSI */</span>
+<span class="cp"># endif
+</span>
+  <span class="cm">/* signal info */</span>
+  <span class="kt">void</span> <span class="p">(</span><span class="o">**</span><span class="p">(</span><span class="n">_sig_func</span><span class="p">))(</span><span class="kt">int</span><span class="p">);</span>
+
+  <span class="cm">/* These are here last so that __FILE can grow without changing the offsets
+     of the above members (on the off chance that future binary compatibility
+     would be broken otherwise).  */</span>
+  <span class="k">struct</span> <span class="n">_glue</span> <span class="n">__sglue</span><span class="p">;</span>		<span class="cm">/* root of glue chain */</span>
+</details>
+<span class="cp"># ifndef _REENT_GLOBAL_STDIO_STREAMS
+</span>  <span class="n">__FILE</span> <span class="n">__sf</span><span class="p">[</span><span class="mi">3</span><span class="p">];</span>  		<span class="cm">/* first three file descriptors */</span>
+<span class="cp"># endif
+</span><span class="p">};</span></code></pre></figure>
+
+<p>This reentrancy struct is initialized by <em>_REENT_INIT</em>, which is defined in <code class="highlighter-rouge">reent.h</code>. 
+In this macro the <em>_stdin</em>, <em>_stdout</em>, and <em>_stderror</em> elements are initialized with the addresses of <em>__sf[0]</em>, <em>__sf[1]</em> and <em>__sf[2]</em> respectively.
+This means that these file pointers point to valid blocks of memory.</p>
+
+<h3 id="opening-stdin-stdout-and-stderr">Opening stdin, stdout and stderr</h3>
+<p>The files themeselves are not initialized yet, this is done by <em>CHECK_INIT(ptr)</em>.
+This function checks if stdio is marked initialized, and if not initializes it:</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cp">#define CHECK_INIT(ptr) \
+#define CHECK_INIT(ptr, fp) \
+  do								\
+    {								\
+      struct _reent *_check_init_ptr = (ptr);			\
+      if ((_check_init_ptr) &amp;&amp; !(_check_init_ptr)-&gt;__sdidinit)	\
+	__sinit (_check_init_ptr);				\
+    }								\
+  while (0)</span></code></pre></figure>
+
+<p>This weird looking do-while loop is added so that we can use this macro with a semicolon without a syntax error, as explained <a href="https://stackoverflow.com/questions/154136/why-use-apparently-meaningless-do-while-and-if-else-statements-in-macros">here</a>.</p>
+
+<p>The definition of <em>__sinit</em> can be found in <code class="highlighter-rouge">findfp.c</code>:</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cm">/*
+ * __sinit() is called whenever stdio's internal variables must be set up.
+ */</span>
+<span class="kt">void</span>
+<span class="nf">__sinit</span> <span class="p">(</span><span class="k">struct</span> <span class="n">_reent</span> <span class="o">*</span><span class="n">s</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="n">__sinit_lock_acquire</span> <span class="p">();</span>
+
+  <span class="k">if</span> <span class="p">(</span><span class="n">s</span><span class="o">-&gt;</span><span class="n">__sdidinit</span><span class="p">)</span>
+    <span class="p">{</span>
+      <span class="n">__sinit_lock_release</span> <span class="p">();</span>
+      <span class="k">return</span><span class="p">;</span>
+    <span class="p">}</span>
+
+<details><summary><span class="c1">...</span></summary>
+  <span class="cm">/* make sure we clean up on exit */</span>
+  <span class="n">s</span><span class="o">-&gt;</span><span class="n">__cleanup</span> <span class="o">=</span> <span class="n">_cleanup_r</span><span class="p">;</span>	<span class="cm">/* conservative */</span>
+
+  <span class="n">s</span><span class="o">-&gt;</span><span class="n">__sglue</span><span class="p">.</span><span class="n">_next</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+<span class="cp">#ifndef _REENT_SMALL
+# ifndef _REENT_GLOBAL_STDIO_STREAMS
+</span>  <span class="n">s</span><span class="o">-&gt;</span><span class="n">__sglue</span><span class="p">.</span><span class="n">_niobs</span> <span class="o">=</span> <span class="mi">3</span><span class="p">;</span>
+  <span class="n">s</span><span class="o">-&gt;</span><span class="n">__sglue</span><span class="p">.</span><span class="n">_iobs</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">s</span><span class="o">-&gt;</span><span class="n">__sf</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+<span class="cp"># endif </span><span class="cm">/* _REENT_GLOBAL_STDIO_STREAMS */</span><span class="cp">
+#else
+</span>  <span class="n">s</span><span class="o">-&gt;</span><span class="n">__sglue</span><span class="p">.</span><span class="n">_niobs</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="n">s</span><span class="o">-&gt;</span><span class="n">__sglue</span><span class="p">.</span><span class="n">_iobs</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+  <span class="cm">/* Avoid infinite recursion when calling __sfp  for _GLOBAL_REENT.  The
+     problem is that __sfp checks for _GLOBAL_REENT-&gt;__sdidinit and calls
+     __sinit if it's 0. */</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">s</span> <span class="o">==</span> <span class="n">_GLOBAL_REENT</span><span class="p">)</span>
+    <span class="n">s</span><span class="o">-&gt;</span><span class="n">__sdidinit</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+<span class="cp"># ifndef _REENT_GLOBAL_STDIO_STREAMS
+</span>  <span class="n">s</span><span class="o">-&gt;</span><span class="n">_stdin</span> <span class="o">=</span> <span class="n">__sfp</span><span class="p">(</span><span class="n">s</span><span class="p">);</span>
+  <span class="n">s</span><span class="o">-&gt;</span><span class="n">_stdout</span> <span class="o">=</span> <span class="n">__sfp</span><span class="p">(</span><span class="n">s</span><span class="p">);</span>
+  <span class="n">s</span><span class="o">-&gt;</span><span class="n">_stderr</span> <span class="o">=</span> <span class="n">__sfp</span><span class="p">(</span><span class="n">s</span><span class="p">);</span>
+<span class="cp"># else </span><span class="cm">/* _REENT_GLOBAL_STDIO_STREAMS */</span><span class="cp">
+</span>  <span class="n">s</span><span class="o">-&gt;</span><span class="n">_stdin</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">__sf</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+  <span class="n">s</span><span class="o">-&gt;</span><span class="n">_stdout</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">__sf</span><span class="p">[</span><span class="mi">1</span><span class="p">];</span>
+  <span class="n">s</span><span class="o">-&gt;</span><span class="n">_stderr</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">__sf</span><span class="p">[</span><span class="mi">2</span><span class="p">];</span>
+<span class="cp"># endif </span><span class="cm">/* _REENT_GLOBAL_STDIO_STREAMS */</span><span class="cp">
+#endif
+</span>
+<span class="cp">#ifdef _REENT_GLOBAL_STDIO_STREAMS
+</span>  <span class="k">if</span> <span class="p">(</span><span class="n">__sf</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="n">_cookie</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">_GLOBAL_REENT</span><span class="o">-&gt;</span><span class="n">__sglue</span><span class="p">.</span><span class="n">_niobs</span> <span class="o">=</span> <span class="mi">3</span><span class="p">;</span>
+    <span class="n">_GLOBAL_REENT</span><span class="o">-&gt;</span><span class="n">__sglue</span><span class="p">.</span><span class="n">_iobs</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">__sf</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+    <span class="n">stdin_init</span> <span class="p">(</span><span class="o">&amp;</span><span class="n">__sf</span><span class="p">[</span><span class="mi">0</span><span class="p">]);</span>
+    <span class="n">stdout_init</span> <span class="p">(</span><span class="o">&amp;</span><span class="n">__sf</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
+    <span class="n">stderr_init</span> <span class="p">(</span><span class="o">&amp;</span><span class="n">__sf</span><span class="p">[</span><span class="mi">2</span><span class="p">]);</span>
+  <span class="p">}</span>
+</details>
+<span class="cp">#else </span><span class="cm">/* _REENT_GLOBAL_STDIO_STREAMS */</span><span class="cp">
+</span>  <span class="n">stdin_init</span> <span class="p">(</span><span class="n">s</span><span class="o">-&gt;</span><span class="n">_stdin</span><span class="p">);</span>
+  <span class="n">stdout_init</span> <span class="p">(</span><span class="n">s</span><span class="o">-&gt;</span><span class="n">_stdout</span><span class="p">);</span>
+  <span class="n">stderr_init</span> <span class="p">(</span><span class="n">s</span><span class="o">-&gt;</span><span class="n">_stderr</span><span class="p">);</span>
+<span class="cp">#endif </span><span class="cm">/* _REENT_GLOBAL_STDIO_STREAMS */</span><span class="cp">
+</span>
+  <span class="n">s</span><span class="o">-&gt;</span><span class="n">__sdidinit</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+
+  <span class="n">__sinit_lock_release</span> <span class="p">();</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>The purpose of this post is researching how printing works, so we will discuss how stdout is opened. The code for stdin and stderr is very similar.
+The only thing that <em>stdout_init</em> does is calling.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c">  <span class="n">std</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">__SWR</span> <span class="o">|</span> <span class="n">__SLBF</span><span class="p">,</span> <span class="mi">1</span><span class="p">);</span></code></pre></figure>
+
+<p>The two flags mean that the file can be written to and that it is line buffered.
+This means that the actual write will occur only when a newline character occurs (or a flush is executed).</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="k">static</span> <span class="kt">void</span>
+<span class="nf">std</span> <span class="p">(</span><span class="kt">FILE</span> <span class="o">*</span><span class="n">ptr</span><span class="p">,</span>
+            <span class="kt">int</span> <span class="n">flags</span><span class="p">,</span>
+            <span class="kt">int</span> <span class="n">file</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_p</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_r</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_w</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">=</span> <span class="n">flags</span><span class="p">;</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_flags2</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_file</span> <span class="o">=</span> <span class="n">file</span><span class="p">;</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_bf</span><span class="p">.</span><span class="n">_base</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_bf</span><span class="p">.</span><span class="n">_size</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_lbfsize</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="n">memset</span> <span class="p">(</span><span class="o">&amp;</span><span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_mbstate</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="k">sizeof</span> <span class="p">(</span><span class="n">_mbstate_t</span><span class="p">));</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_cookie</span> <span class="o">=</span> <span class="n">ptr</span><span class="p">;</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_read</span> <span class="o">=</span> <span class="n">__sread</span><span class="p">;</span>
+<span class="cp">#ifndef __LARGE64_FILES
+</span>  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_write</span> <span class="o">=</span> <span class="n">__swrite</span><span class="p">;</span>
+<span class="cp">#else </span><span class="cm">/* __LARGE64_FILES */</span><span class="cp">
+</span><details><summary><span class="c1">...</span></summary>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_write</span> <span class="o">=</span> <span class="n">__swrite64</span><span class="p">;</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_seek64</span> <span class="o">=</span> <span class="n">__sseek64</span><span class="p">;</span>
+  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">|=</span> <span class="n">__SL64</span><span class="p">;</span>
+</details>
+<span class="cp">#endif </span><span class="cm">/* __LARGE64_FILES */</span><span class="cp">
+</span>  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_seek</span> <span class="o">=</span> <span class="n">__sseek</span><span class="p">;</span>
+<span class="cp">#ifdef _STDIO_CLOSE_PER_REENT_STD_STREAMS
+</span>  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_close</span> <span class="o">=</span> <span class="n">__sclose</span><span class="p">;</span>
+<span class="cp">#else </span><span class="cm">/* _STDIO_CLOSE_STD_STREAMS */</span><span class="cp">
+</span>  <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_close</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+<span class="cp">#endif </span><span class="cm">/* _STDIO_CLOSE_STD_STREAMS */</span><span class="cp">
+#if !defined(__SINGLE_THREAD__) &amp;&amp; !(defined(_REENT_SMALL) &amp;&amp; !defined(_REENT_GLOBAL_STDIO_STREAMS))
+</span>  <span class="n">__lock_init_recursive</span> <span class="p">(</span><span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_lock</span><span class="p">);</span>
+  <span class="cm">/*
+   * #else
+   * lock is already initialized in __sfp
+   */</span>
+<span class="cp">#endif
+</span>
+<details><summary><span class="c1">...</span></summary>
+<span class="cp">#ifdef __SCLE
+</span>  <span class="k">if</span> <span class="p">(</span><span class="n">__stextmode</span> <span class="p">(</span><span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_file</span><span class="p">))</span>
+    <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">|=</span> <span class="n">__SCLE</span><span class="p">;</span>
+<span class="cp">#endif
+</span></details>
+<span class="p">}</span></code></pre></figure>
+
+<p>Now we know how the file is opened and initialized and how all function pointers are set, let us continue our exploration.</p>
+
+<h2 id="locking-a-file-intermezzo">Locking a file (intermezzo)</h2>
 <p>The functions <em>_newlib_flockfile_start</em> and <em>_newlib_flockfile_end</em> are used for file locking.
 These functions are defined in <code class="highlighter-rouge">newlib/libc/stdio/local.h</code>, the implementation of <em>_flockfile</em> and <em>_funlockfile</em> are found in <code class="highlighter-rouge">newlib/libc/include/sys/stdio.h</code>.
 We will combine them to make things a bit easier to read.</p>
@@ -249,20 +507,30 @@ We will combine them to make things a bit easier to read.</p>
 <span class="cp">#define _flockfile(fp) (((fp)-&gt;_flags &amp; __SSTR) ? 0 : __lock_acquire_recursive((fp)-&gt;_lock))
 #define _funlockfile(fp) (((fp)-&gt;_flags &amp; __SSTR) ? 0 : __lock_release_recursive((fp)-&gt;_lock))</span></code></pre></figure>
 
-<p>I found it quite cool that <em>_start</em> and <em>_end</em> define a scope together so that you have cannot forget to do an <em>_end</em>.</p>
-
-<h2 id="reentrancy">Reentrancy</h2>
-<p>Reentrancy code is in <code class="highlighter-rouge">newlib/libc/include/sys/reent.h</code></p>
+<p>I found it quite cool that <em>_start</em> and <em>_end</em> define a scope together so that you have cannot forget to do an <em>_end</em>.
+It is not in the scope of this article to discuss the locking methods used, so we will not explain this further here.</p>
 
 <h2 id="printing-a-character">Printing a character</h2>
+<p>Remember that in <em>_puts_r</em> all characters are written out with the following loop:</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c">  <span class="k">while</span> <span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">)</span>
+    <span class="p">{</span>
+      <span class="k">if</span> <span class="p">(</span><span class="n">__sputc_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="o">*</span><span class="n">p</span><span class="o">++</span><span class="p">,</span> <span class="n">fp</span><span class="p">)</span> <span class="o">==</span> <span class="n">EOF</span><span class="p">)</span>
+	<span class="k">goto</span> <span class="n">err</span><span class="p">;</span>
+    <span class="p">}</span>
+  <span class="k">if</span> <span class="p">(</span><span class="n">__sputc_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="sc">'\n'</span><span class="p">,</span> <span class="n">fp</span><span class="p">)</span> <span class="o">==</span> <span class="n">EOF</span><span class="p">)</span>
+    <span class="k">goto</span> <span class="n">err</span><span class="p">;</span></code></pre></figure>
+
 <p>The definition of <em>sputc_r</em> can be found at <code class="highlighter-rouge">newlib/libc/include/sys/stdio.h</code>.</p>
 
 <figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="n">_ELIDABLE_INLINE</span> <span class="kt">int</span> <span class="nf">__sputc_r</span><span class="p">(</span><span class="k">struct</span> <span class="n">_reent</span> <span class="o">*</span><span class="n">_ptr</span><span class="p">,</span> <span class="kt">int</span> <span class="n">_c</span><span class="p">,</span> <span class="kt">FILE</span> <span class="o">*</span><span class="n">_p</span><span class="p">)</span> <span class="p">{</span>
+<details><summary><span class="c1">...</span></summary>
 <span class="cp">#ifdef __SCLE
 </span>    <span class="k">if</span> <span class="p">((</span><span class="n">_p</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">&amp;</span> <span class="n">__SCLE</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="n">_c</span> <span class="o">==</span> <span class="sc">'\n'</span><span class="p">)</span>
       <span class="n">__sputc_r</span> <span class="p">(</span><span class="n">_ptr</span><span class="p">,</span> <span class="sc">'\r'</span><span class="p">,</span> <span class="n">_p</span><span class="p">);</span>
 <span class="cp">#endif
-</span>    <span class="k">if</span> <span class="p">(</span><span class="o">--</span><span class="n">_p</span><span class="o">-&gt;</span><span class="n">_w</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="o">||</span> <span class="p">(</span><span class="n">_p</span><span class="o">-&gt;</span><span class="n">_w</span> <span class="o">&gt;=</span> <span class="n">_p</span><span class="o">-&gt;</span><span class="n">_lbfsize</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="kt">char</span><span class="p">)</span><span class="n">_c</span> <span class="o">!=</span> <span class="sc">'\n'</span><span class="p">))</span>
+</span></details>
+    <span class="k">if</span> <span class="p">(</span><span class="o">--</span><span class="n">_p</span><span class="o">-&gt;</span><span class="n">_w</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="o">||</span> <span class="p">(</span><span class="n">_p</span><span class="o">-&gt;</span><span class="n">_w</span> <span class="o">&gt;=</span> <span class="n">_p</span><span class="o">-&gt;</span><span class="n">_lbfsize</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="kt">char</span><span class="p">)</span><span class="n">_c</span> <span class="o">!=</span> <span class="sc">'\n'</span><span class="p">))</span>
         <span class="k">return</span> <span class="p">(</span><span class="o">*</span><span class="n">_p</span><span class="o">-&gt;</span><span class="n">_p</span><span class="o">++</span> <span class="o">=</span> <span class="n">_c</span><span class="p">);</span>
     <span class="k">else</span>
         <span class="k">return</span> <span class="p">(</span><span class="n">__swbuf_r</span><span class="p">(</span><span class="n">_ptr</span><span class="p">,</span> <span class="n">_c</span><span class="p">,</span> <span class="n">_p</span><span class="p">));</span>

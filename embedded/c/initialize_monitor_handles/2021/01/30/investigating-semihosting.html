@@ -110,7 +110,7 @@ In this post I will dig deeper in to how it works.
 <p>We start with an example of how to use semihosting after that we will investigate what is going on.
 Consider the following piece of code (<code class="highlighter-rouge">main.c</code>). Which uses semihosting to print over the debug console.</p>
 
-<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cp">#include &lt;stdio.h&gt;
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cp">#include</span> <span class="cpf">&lt;stdio.h&gt;</span><span class="cp">
 </span><span class="k">extern</span> <span class="kt">void</span> <span class="nf">initialise_monitor_handles</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
 <span class="kt">int</span> <span class="nf">main</span><span class="p">()</span> <span class="p">{</span>
     <span class="n">initialise_monitor_handles</span><span class="p">();</span>
@@ -217,7 +217,7 @@ Notice that in the same folder as, <code class="highlighter-rouge">lib/arm-none-
 We can find its implementation in
 The implementation of this function in newlib can be found at <a href="https://github.com/mirror/newlib-cygwin/blob/master/newlib/libc/sys/arm/swi.h">newlib/libc/sys/arm/swi.h</a>.</p>
 
-<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cp">#include "arm.h"
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cp">#include</span> <span class="cpf">"arm.h"</span><span class="cp">
 </span>
 <span class="cm">/* SWI numbers for RDP (Demon) monitor.
  *
