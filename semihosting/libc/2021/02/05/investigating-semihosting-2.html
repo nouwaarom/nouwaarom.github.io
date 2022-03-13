@@ -14,7 +14,7 @@
   
 
   <link rel="stylesheet" href="/assets/main.css">
-  <link rel="canonical" href="https://nouwaarom.com/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html">
+  <link rel="canonical" href="https://nouwaarom.com/semihosting/libc/2021/02/05/investigating-semihosting-2.html">
   
   
   <link rel="alternate" type="application/rss+xml" title="Now why?" href="https://nouwaarom.com/feed.xml">
@@ -24,7 +24,7 @@
   
   <meta property="og:title" content="Semihosting: Printing to stdout">
   <meta property="og:site_name" content="Now why?">
-  <meta property="og:url" content="https://nouwaarom.com/embedded/c/semihosting/puts/2021/02/05/investigating-semihosting-2.html">
+  <meta property="og:url" content="https://nouwaarom.com/semihosting/libc/2021/02/05/investigating-semihosting-2.html">
   <meta property="og:description" content="When using printf() when semihosting the printf function uses semihosting functions to print to the PC console. We will investigate how this works.">
   
   
@@ -81,12 +81,6 @@
       <h1 class="post-title" itemprop="name headline">Semihosting: Printing to stdout</h1>
     
     <p class="post-meta"><time datetime="2021-02-05T00:00:00-06:00" itemprop="datePublished">Feb 5, 2021</time> •
-  
-    
-    
-  
-    
-    
   
     
     
@@ -521,6 +515,10 @@ It is not in the scope of this article to discuss the locking methods used, so w
   <span class="k">if</span> <span class="p">(</span><span class="n">__sputc_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="sc">'\n'</span><span class="p">,</span> <span class="n">fp</span><span class="p">)</span> <span class="o">==</span> <span class="n">EOF</span><span class="p">)</span>
     <span class="k">goto</span> <span class="n">err</span><span class="p">;</span></code></pre></figure>
 
+<p>This loop calls <em>__sputc_r</em> for all characters in the string, until a string termintation character (‘\0’) occurs or the file is full.
+After that a newline is also printed using <em>__sputc_r</em>.</p>
+
+<h3 id="buffers-and-flushing">Buffers and flushing</h3>
 <p>The definition of <em>sputc_r</em> can be found at <code class="highlighter-rouge">newlib/libc/include/sys/stdio.h</code>.</p>
 
 <figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="n">_ELIDABLE_INLINE</span> <span class="kt">int</span> <span class="nf">__sputc_r</span><span class="p">(</span><span class="k">struct</span> <span class="n">_reent</span> <span class="o">*</span><span class="n">_ptr</span><span class="p">,</span> <span class="kt">int</span> <span class="n">_c</span><span class="p">,</span> <span class="kt">FILE</span> <span class="o">*</span><span class="n">_p</span><span class="p">)</span> <span class="p">{</span>
@@ -595,6 +593,9 @@ It is not in the scope of this article to discuss the locking methods used, so w
   <span class="k">return</span> <span class="n">c</span><span class="p">;</span>
 <span class="p">}</span></code></pre></figure>
 
+<p>We will not discuss the buffering here but we can see that 
+<em>_fflush_r</em> is called if the buffer is full or if we the file is line buffered and we see a newline character.</p>
+
 <p>The source of <em>_fflush_r</em> can be found in <code class="highlighter-rouge">newlib/libc/stdio/fflush.c</code>.</p>
 
 <figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="kt">int</span>
@@ -603,6 +604,7 @@ It is not in the scope of this article to discuss the locking methods used, so w
 <span class="p">{</span>
   <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
 
+<details><summary><span class="c1">...</span></summary>
 <span class="cp">#ifdef _REENT_SMALL
 </span>  <span class="cm">/* For REENT_SMALL platforms, it is possible we are being
      called for the first time on a std stream.  This std
@@ -618,7 +620,8 @@ It is not in the scope of this article to discuss the locking methods used, so w
   <span class="k">if</span> <span class="p">(</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_bf</span><span class="p">.</span><span class="n">_base</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span>
     <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
 <span class="cp">#endif </span><span class="cm">/* _REENT_SMALL  */</span><span class="cp">
-</span>
+</span></details>
+
   <span class="n">CHECK_INIT</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="p">);</span>
 
   <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span><span class="p">)</span>
@@ -647,14 +650,14 @@ It is not in the scope of this article to discuss the locking methods used, so w
   <span class="n">flags</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span><span class="p">;</span>
   <span class="k">if</span> <span class="p">((</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">__SWR</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
     <span class="p">{</span>
+<details><summary><span class="c1">...</span></summary>
 <span class="cp">#ifdef _FSEEK_OPTIMIZATION
 </span>      <span class="cm">/* For a read stream, an fflush causes the next seek to be
          unoptimized (i.e. forces a system-level seek).  This conforms
          to the POSIX and SUSv3 standards.  */</span>
       <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">|=</span> <span class="n">__SNPT</span><span class="p">;</span>
 <span class="cp">#endif
-</span>
-      <span class="cm">/* For a seekable stream with buffered read characters, we will attempt
+</span>      <span class="cm">/* For a seekable stream with buffered read characters, we will attempt
          a seek to the current position now.  A subsequent read will then get
          the next byte from the file rather than the buffer.  This conforms
          to the POSIX and SUSv3 standards.  Note that the standards allow
@@ -739,6 +742,7 @@ It is not in the scope of this article to discuss the locking methods used, so w
 	    <span class="p">}</span>
 	<span class="p">}</span>
       <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+</details>
     <span class="p">}</span>
   <span class="k">if</span> <span class="p">((</span><span class="n">p</span> <span class="o">=</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_bf</span><span class="p">.</span><span class="n">_base</span><span class="p">)</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span>
     <span class="p">{</span>
@@ -768,6 +772,120 @@ It is not in the scope of this article to discuss the locking methods used, so w
     <span class="p">}</span>
   <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
 <span class="p">}</span></code></pre></figure>
+
+<p>In this loop all characters are written using <em>fp-&gt;_write</em>.
+This function returns the number of bytes written. If not all bytes could be written in the first call more calls are made for the rest of the data.
+Remember that in the initialization this function pointer was assigned <em>__swrite</em>.</p>
+
+<h3 id="writing-a-character">Writing a character</h3>
+<p>The code for <em>__swrite</em> can be found in <code class="highlighter-rouge">stdio/stdio.c</code>.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="n">_READ_WRITE_RETURN_TYPE</span>
+<span class="nf">__swrite</span> <span class="p">(</span><span class="k">struct</span> <span class="n">_reent</span> <span class="o">*</span><span class="n">ptr</span><span class="p">,</span>
+       <span class="kt">void</span> <span class="o">*</span><span class="n">cookie</span><span class="p">,</span>
+       <span class="kt">char</span> <span class="k">const</span> <span class="o">*</span><span class="n">buf</span><span class="p">,</span>
+       <span class="n">_READ_WRITE_BUFSIZE_TYPE</span> <span class="n">n</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="k">register</span> <span class="kt">FILE</span> <span class="o">*</span><span class="n">fp</span> <span class="o">=</span> <span class="p">(</span><span class="kt">FILE</span> <span class="o">*</span><span class="p">)</span> <span class="n">cookie</span><span class="p">;</span>
+  <span class="kt">ssize_t</span> <span class="n">w</span><span class="p">;</span>
+<details><summary><span class="c1">...</span></summary>
+<span class="cp">#ifdef __SCLE
+</span>  <span class="kt">int</span> <span class="n">oldmode</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span>
+<span class="cp">#endif
+</span></details>
+
+  <span class="k">if</span> <span class="p">(</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">&amp;</span> <span class="n">__SAPP</span><span class="p">)</span>
+    <span class="n">_lseek_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_file</span><span class="p">,</span> <span class="p">(</span><span class="n">_off_t</span><span class="p">)</span> <span class="mi">0</span><span class="p">,</span> <span class="n">SEEK_END</span><span class="p">);</span>
+  <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="n">__SOFF</span><span class="p">;</span>	<span class="cm">/* in case O_APPEND mode is set */</span>
+
+<details><summary><span class="c1">...</span></summary>
+<span class="cp">#ifdef __SCLE
+</span>  <span class="k">if</span> <span class="p">(</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_flags</span> <span class="o">&amp;</span> <span class="n">__SCLE</span><span class="p">)</span>
+    <span class="n">oldmode</span> <span class="o">=</span> <span class="n">setmode</span> <span class="p">(</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_file</span><span class="p">,</span> <span class="n">O_BINARY</span><span class="p">);</span>
+<span class="cp">#endif
+</span></details>
+
+  <span class="n">w</span> <span class="o">=</span> <span class="n">_write_r</span> <span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">fp</span><span class="o">-&gt;</span><span class="n">_file</span><span class="p">,</span> <span class="n">buf</span><span class="p">,</span> <span class="n">n</span><span class="p">);</span>
+
+<details><summary><span class="c1">...</span></summary>
+<span class="cp">#ifdef __SCLE
+</span>  <span class="k">if</span> <span class="p">(</span><span class="n">oldmode</span><span class="p">)</span>
+    <span class="n">setmode</span> <span class="p">(</span><span class="n">fp</span><span class="o">-&gt;</span><span class="n">_file</span><span class="p">,</span> <span class="n">oldmode</span><span class="p">);</span>
+<span class="cp">#endif
+</span></details>
+
+  <span class="k">return</span> <span class="n">w</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>Stdout is not opened in append mode so we can ignore that part.
+What is left is the call to <em>_write_r</em>.
+This function is defined in <code class="highlighter-rouge">reent/writer.c</code></p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="n">_ssize_t</span>
+<span class="nf">_write_r</span> <span class="p">(</span><span class="k">struct</span> <span class="n">_reent</span> <span class="o">*</span><span class="n">ptr</span><span class="p">,</span>
+     <span class="kt">int</span> <span class="n">fd</span><span class="p">,</span>
+     <span class="k">const</span> <span class="kt">void</span> <span class="o">*</span><span class="n">buf</span><span class="p">,</span>
+     <span class="kt">size_t</span> <span class="n">cnt</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="n">_ssize_t</span> <span class="n">ret</span><span class="p">;</span>
+
+  <span class="n">errno</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+  <span class="k">if</span> <span class="p">((</span><span class="n">ret</span> <span class="o">=</span> <span class="p">(</span><span class="n">_ssize_t</span><span class="p">)</span><span class="n">_write</span> <span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">buf</span><span class="p">,</span> <span class="n">cnt</span><span class="p">))</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span> <span class="o">&amp;&amp;</span> <span class="n">errno</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="n">ptr</span><span class="o">-&gt;</span><span class="n">_errno</span> <span class="o">=</span> <span class="n">errno</span><span class="p">;</span>
+  <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>The <em>_write</em> function is system specific. For arm it is defined in<code class="highlighter-rouge">sys/arm/syscalls.c</code> as:</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cm">/* file, is a user file descriptor. */</span>
+<span class="kt">int</span> <span class="nf">__attribute__</span><span class="p">((</span><span class="n">weak</span><span class="p">))</span>
+<span class="n">_write</span> <span class="p">(</span><span class="kt">int</span> <span class="n">file</span><span class="p">,</span> <span class="k">const</span> <span class="kt">void</span> <span class="o">*</span> <span class="n">ptr</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">len</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="kt">int</span> <span class="n">slot</span> <span class="o">=</span> <span class="n">findslot</span> <span class="p">(</span><span class="n">remap_handle</span> <span class="p">(</span><span class="n">file</span><span class="p">));</span>
+  <span class="kt">int</span> <span class="n">x</span> <span class="o">=</span> <span class="n">_swiwrite</span> <span class="p">(</span><span class="n">file</span><span class="p">,</span> <span class="n">ptr</span><span class="p">,</span> <span class="n">len</span><span class="p">);</span>
+
+  <span class="k">if</span> <span class="p">(</span><span class="n">x</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span> <span class="o">||</span> <span class="n">x</span> <span class="o">==</span> <span class="n">len</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">error</span> <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">);</span>
+
+  <span class="k">if</span> <span class="p">(</span><span class="n">slot</span> <span class="o">!=</span> <span class="n">MAX_OPEN_FILES</span><span class="p">)</span>
+    <span class="n">openfiles</span><span class="p">[</span><span class="n">slot</span><span class="p">].</span><span class="n">pos</span> <span class="o">+=</span> <span class="n">len</span> <span class="o">-</span> <span class="n">x</span><span class="p">;</span>
+
+  <span class="k">return</span> <span class="n">len</span> <span class="o">-</span> <span class="n">x</span><span class="p">;</span>
+<span class="p">}</span></code></pre></figure>
+
+<p>Now we are finally there. In <em>_swiwrite</em> a block of data is written using semihosting.</p>
+
+<figure class="highlight"><pre><code class="language-c" data-lang="c"><span class="cm">/* file, is a valid internal file handle.
+   Returns the number of bytes *not* written. */</span>
+<span class="kt">int</span>
+<span class="nf">_swiwrite</span> <span class="p">(</span><span class="kt">int</span> <span class="n">file</span><span class="p">,</span> <span class="k">const</span> <span class="kt">void</span> <span class="o">*</span> <span class="n">ptr</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">len</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="kt">int</span> <span class="n">fh</span> <span class="o">=</span> <span class="n">remap_handle</span> <span class="p">(</span><span class="n">file</span><span class="p">);</span>
+<span class="cp">#ifdef ARM_RDI_MONITOR
+</span>  <span class="kt">int</span> <span class="n">block</span><span class="p">[</span><span class="mi">3</span><span class="p">];</span>
+
+  <span class="n">block</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">fh</span><span class="p">;</span>
+  <span class="n">block</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="kt">int</span><span class="p">)</span> <span class="n">ptr</span><span class="p">;</span>
+  <span class="n">block</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="kt">int</span><span class="p">)</span> <span class="n">len</span><span class="p">;</span>
+
+  <span class="k">return</span> <span class="n">do_AngelSWI</span> <span class="p">(</span><span class="n">AngelSWI_Reason_Write</span><span class="p">,</span> <span class="n">block</span><span class="p">);</span>
+<span class="cp">#else
+</span><details><summary><span class="c1">...</span></summary>
+  <span class="k">register</span> <span class="kt">int</span> <span class="n">r0</span> <span class="n">asm</span><span class="p">(</span><span class="s">"r0"</span><span class="p">)</span> <span class="o">=</span> <span class="n">fh</span><span class="p">;</span>
+  <span class="k">register</span> <span class="kt">int</span> <span class="n">r1</span> <span class="n">asm</span><span class="p">(</span><span class="s">"r1"</span><span class="p">)</span> <span class="o">=</span> <span class="p">(</span><span class="kt">int</span><span class="p">)</span> <span class="n">ptr</span><span class="p">;</span>
+  <span class="k">register</span> <span class="kt">int</span> <span class="n">r2</span> <span class="n">asm</span><span class="p">(</span><span class="s">"r2"</span><span class="p">)</span> <span class="o">=</span> <span class="p">(</span><span class="kt">int</span><span class="p">)</span> <span class="n">len</span><span class="p">;</span>
+
+  <span class="n">asm</span> <span class="p">(</span><span class="s">"swi %a4"</span>
+       <span class="o">:</span> <span class="s">"=r"</span> <span class="p">(</span><span class="n">r0</span><span class="p">)</span>
+       <span class="o">:</span> <span class="s">"0"</span><span class="p">(</span><span class="n">fh</span><span class="p">),</span> <span class="s">"r"</span><span class="p">(</span><span class="n">r1</span><span class="p">),</span> <span class="s">"r"</span><span class="p">(</span><span class="n">r2</span><span class="p">),</span> <span class="s">"i"</span><span class="p">(</span><span class="n">SWI_Write</span><span class="p">));</span>
+  <span class="k">return</span> <span class="n">r0</span><span class="p">;</span>
+</details>
+<span class="cp">#endif
+</span><span class="p">}</span></code></pre></figure>
+
+<h2 id="conclusion">Conclusion</h2>
+<p>There is a lot of complicated code to write a string and there seems to be quite some overhead.
+But the call to write bytes using semihosting is simple.</p>
 
 <p>Thank you for reading. If you have questions or suggestions, please open an issue or mergerequest on the <a href="https://github.com/nouwaarom/nouwaarom.github.io">repository</a> for this site.</p>
 
