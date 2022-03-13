@@ -4,7 +4,7 @@ title:  "Semihosting: Printing to stdout"
 date:   2021-02-05
 draft: true
 description: "When using printf() when semihosting the printf function uses semihosting functions to print to the PC console. We will investigate how this works."
-categories: embedded c semihosting puts
+categories: semihosting libc
 ---
 
 This is part two of a series, part one can be found [here]({{ site.baseurl }}{% link _posts/2021-01-30-investigating-semihosting.markdown %}).
@@ -438,7 +438,10 @@ Remember that in *_puts_r* all characters are written out with the following loo
   if (__sputc_r (ptr, '\n', fp) == EOF)
     goto err;
 {% endhighlight %}
+This loop calls *__sputc_r* for all characters in the string, until a string termintation character ('\\0') occurs or the file is full.
+After that a newline is also printed using *__sputc_r*.
 
+### Buffers and flushing
 The definition of *sputc_r* can be found at `newlib/libc/include/sys/stdio.h`.
 {% fold_highlight %}
 {% highlight c %}
@@ -516,8 +519,11 @@ __swbuf_r (struct _reent *ptr,
   return c;
 }
 {% endhighlight %}
+We will not discuss the buffering here but we can see that 
+*_fflush_r* is called if the buffer is full or if we the file is line buffered and we see a newline character.
 
 The source of *_fflush_r* can be found in `newlib/libc/stdio/fflush.c`.
+{% fold_highlight %}
 {% highlight c %}
 int
 _fflush_r (struct _reent *ptr,
@@ -525,6 +531,7 @@ _fflush_r (struct _reent *ptr,
 {
   int ret;
 
+//FOLD
 #ifdef _REENT_SMALL
   /* For REENT_SMALL platforms, it is possible we are being
      called for the first time on a std stream.  This std
@@ -540,6 +547,7 @@ _fflush_r (struct _reent *ptr,
   if (fp->_bf._base == NULL)
     return 0;
 #endif /* _REENT_SMALL  */
+//ENDFOLD
 
   CHECK_INIT (ptr, fp);
 
@@ -569,13 +577,13 @@ __sflush_r (struct _reent *ptr,
   flags = fp->_flags;
   if ((flags & __SWR) == 0)
     {
+//FOLD
 #ifdef _FSEEK_OPTIMIZATION
       /* For a read stream, an fflush causes the next seek to be
          unoptimized (i.e. forces a system-level seek).  This conforms
          to the POSIX and SUSv3 standards.  */
       fp->_flags |= __SNPT;
 #endif
-
       /* For a seekable stream with buffered read characters, we will attempt
          a seek to the current position now.  A subsequent read will then get
          the next byte from the file rather than the buffer.  This conforms
@@ -661,6 +669,7 @@ __sflush_r (struct _reent *ptr,
 	    }
 	}
       return 0;
+//ENDFOLD
     }
   if ((p = fp->_bf._base) == NULL)
     {
@@ -691,5 +700,126 @@ __sflush_r (struct _reent *ptr,
   return 0;
 }
 {% endhighlight %}
+{% endfold_highlight %}
+In this loop all characters are written using *fp->_write*.
+This function returns the number of bytes written. If not all bytes could be written in the first call more calls are made for the rest of the data.
+Remember that in the initialization this function pointer was assigned *__swrite*.
+
+### Writing a character
+The code for *__swrite* can be found in `stdio/stdio.c`.
+{% fold_highlight %}
+{% highlight c %}
+_READ_WRITE_RETURN_TYPE
+__swrite (struct _reent *ptr,
+       void *cookie,
+       char const *buf,
+       _READ_WRITE_BUFSIZE_TYPE n)
+{
+  register FILE *fp = (FILE *) cookie;
+  ssize_t w;
+//FOLD
+#ifdef __SCLE
+  int oldmode=0;
+#endif
+//ENDFOLD
+
+  if (fp->_flags & __SAPP)
+    _lseek_r (ptr, fp->_file, (_off_t) 0, SEEK_END);
+  fp->_flags &= ~__SOFF;	/* in case O_APPEND mode is set */
+
+//FOLD
+#ifdef __SCLE
+  if (fp->_flags & __SCLE)
+    oldmode = setmode (fp->_file, O_BINARY);
+#endif
+//ENDFOLD
+
+  w = _write_r (ptr, fp->_file, buf, n);
+
+//FOLD
+#ifdef __SCLE
+  if (oldmode)
+    setmode (fp->_file, oldmode);
+#endif
+//ENDFOLD
+
+  return w;
+}
+{% endhighlight %}
+{% endfold_highlight %}
+Stdout is not opened in append mode so we can ignore that part.
+What is left is the call to *_write_r*.
+This function is defined in `reent/writer.c`
+{% highlight c %}
+_ssize_t
+_write_r (struct _reent *ptr,
+     int fd,
+     const void *buf,
+     size_t cnt)
+{
+  _ssize_t ret;
+
+  errno = 0;
+  if ((ret = (_ssize_t)_write (fd, buf, cnt)) == -1 && errno != 0)
+    ptr->_errno = errno;
+  return ret;
+}
+{% endhighlight %}
+
+The *_write* function is system specific. For arm it is defined in`sys/arm/syscalls.c` as:
+{% highlight c %}
+/* file, is a user file descriptor. */
+int __attribute__((weak))
+_write (int file, const void * ptr, size_t len)
+{
+  int slot = findslot (remap_handle (file));
+  int x = _swiwrite (file, ptr, len);
+
+  if (x == -1 || x == len)
+    return error (-1);
+
+  if (slot != MAX_OPEN_FILES)
+    openfiles[slot].pos += len - x;
+
+  return len - x;
+}
+{% endhighlight %}
+
+Now we are finally there. In *_swiwrite* a block of data is written using semihosting.
+{% fold_highlight %}
+{% highlight c %}
+/* file, is a valid internal file handle.
+   Returns the number of bytes *not* written. */
+int
+_swiwrite (int file, const void * ptr, size_t len)
+{
+  int fh = remap_handle (file);
+#ifdef ARM_RDI_MONITOR
+  int block[3];
+
+  block[0] = fh;
+  block[1] = (int) ptr;
+  block[2] = (int) len;
+
+  return do_AngelSWI (AngelSWI_Reason_Write, block);
+#else
+//FOLD
+  register int r0 asm("r0") = fh;
+  register int r1 asm("r1") = (int) ptr;
+  register int r2 asm("r2") = (int) len;
+
+  asm ("swi %a4"
+       : "=r" (r0)
+       : "0"(fh), "r"(r1), "r"(r2), "i"(SWI_Write));
+  return r0;
+//ENDFOLD
+#endif
+}
+{% endhighlight %}
+{% endfold_highlight %}
+
+## Conclusion
+There is a lot of complicated code to write a string and there seems to be quite some overhead.
+But the call to write bytes using semihosting is simple.
 
 Thank you for reading. If you have questions or suggestions, please open an issue or mergerequest on the [repository]({{ site.repo }}) for this site.
