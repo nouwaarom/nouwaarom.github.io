@@ -8,5 +8,7 @@ The site contains the following posts:
 - [Semihosting: Printing to stdout](https://nouwaarom.com/semihosting/libc/2021/02/05/investigating-semihosting-2.html)
 ### Qt
 - [Qt TableView: Improved Addressbook Example](https://nouwaarom.com/qt/2021/12/19/qt-addressbook-example.html)
+### Pest
+- [Precedence climbing with pest](https://nouwaarom.com/parsing/2022/04/09/calculator-in-pest.html)
 
 Feel free to create an issue or pullrequest if you have questions or feedback.

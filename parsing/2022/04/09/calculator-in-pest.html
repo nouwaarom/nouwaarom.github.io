@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  
+  
+  <title>Parsing with Pest: A simple calculator</title>
+  <meta name="description" content="This post discusses a simple calculator written in pest and how to use precedence climbing">
+  
+
+  <link rel="stylesheet" href="/assets/main.css">
+  <link rel="canonical" href="https://nouwaarom.com/parsing/2022/04/09/calculator-in-pest.html">
+  
+  
+  <link rel="alternate" type="application/rss+xml" title="Now why?" href="https://nouwaarom.com/feed.xml">
+
+  
+
+  
+  <meta property="og:title" content="Parsing with Pest: A simple calculator">
+  <meta property="og:site_name" content="Now why?">
+  <meta property="og:url" content="https://nouwaarom.com/parsing/2022/04/09/calculator-in-pest.html">
+  <meta property="og:description" content="This post discusses a simple calculator written in pest and how to use precedence climbing">
+  
+  
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:site" content="">
+  <meta name="twitter:title" content="Parsing with Pest: A simple calculator">
+  <meta name="twitter:description" content="This post discusses a simple calculator written in pest and how to use precedence climbing">
+  
+    <meta name="twitter:creator" content="">
+  
+  
+
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,700;1,400&amp;display=swap" rel="stylesheet">
+
+  
+  <!-- Counter.dev Analytics -->
+  <script>if(!sessionStorage.getItem("_swa")&&document.referrer.indexOf(location.protocol+"//"+location.host)!== 0){fetch("https://counter.dev/track?"+new URLSearchParams({referrer:document.referrer,screen:screen.width+"x"+screen.height,user:"nouwaarom",utcoffset:"1"}))};sessionStorage.setItem("_swa","1");</script>
+
+
+</head>
+
+
+  <body>
+
+    <header class="site-header">
+
+  <div class="wrapper">
+
+    <a class="site-title" href="/">Now why?</a>
+
+    <nav class="site-nav">
+      
+        
+        <a class="page-link" href="/archives/">Archives</a>
+      
+        
+        <a class="page-link" href="https://github.com/nouwaarom">GitHub</a>
+      
+    </nav>
+
+  </div>
+
+</header>
+
+
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    
+      <h1 class="post-title" itemprop="name headline">Parsing with Pest: A simple calculator</h1>
+    
+    <p class="post-meta"><time datetime="2022-04-09T00:00:00-05:00" itemprop="datePublished">Apr 9, 2022</time> •
+  
+    
+    
+  
+
+
+
+</p>
+  </header>
+
+  <div class="post-content" itemprop="articleBody">
+    <p>This tutorial focuses on the practical aspect of using precedence climbing to parse expressions using <a href="https://pest.rs/">pest</a>.
+To illustrate this we build a parser for simple equations, and construct an abstract syntax tree.
+This article is written together with <a href="https://github.com/wildarch">@wildarch</a>.</p>
+
+<!--more-->
+
+<h2 id="precedence-and-associativity">Precedence and associativity</h2>
+<p>In a simple equation multiplication and division are evaluated first, which means they have a higher precedence.
+e.g. <code class="highlighter-rouge">1 + 2 * 3</code> is evaluated as <code class="highlighter-rouge">1 + (2 * 3)</code>, if the precedence was equal it would be <code class="highlighter-rouge">(1 + 2) * 3</code>.
+For our system we have the following operands:</p>
+<ul>
+  <li>highest precedence: multiplication &amp; division</li>
+  <li>lowest precedence: addition &amp; subtraction</li>
+</ul>
+
+<p>In the expression <code class="highlighter-rouge">1 + 2 - 3</code>, no operator is inherently more important than the other.
+Addition, subtraction, multiplication and division are evaluated from left to right.
+e.g. <code class="highlighter-rouge">1 - 2 + 3</code> is evaluated as <code class="highlighter-rouge">(1 - 2) + 3</code>. We call this property left associativity. 
+Operators can also be right associative. For example, we usually evaluate the statement <code class="highlighter-rouge">x = y = 1</code> by first 
+assigning <code class="highlighter-rouge">y = 1</code> and <code class="highlighter-rouge">x = 1</code> (or <code class="highlighter-rouge">x = y</code>) afterwards.</p>
+
+<p>Associativity only matters if two operators have the same precedence, as is the case with addition and subtraction for 
+example. This means that if we have an expression with only additions and subtractions, we can just evaluate it from 
+left to right. <code class="highlighter-rouge">1 + 2 - 3</code> is equal to <code class="highlighter-rouge">(1 + 2) - 3</code>. And <code class="highlighter-rouge">1 - 2 + 3</code> is equal to <code class="highlighter-rouge">(1 - 2) + 3</code>.</p>
+
+<p>To go from a flat list of operands separated by operators, it suffices to define a precedence and associativity for each 
+operator. With these definitions an algorithm such as precedence climbing is able to construct a corresponding 
+expression tree.</p>
+
+<p>If you are curious to know more about how precedence climbing is implemented, Eli Bendersky has a
+<a href="https://eli.thegreenplace.net/2012/08/02/parsing-expressions-by-precedence-climbing">great tutorial</a> on implementing it
+from scratch using python.</p>
+
+<h2 id="calculator-example">Calculator example</h2>
+<p>We want our calculator to be able to parse simple equations that consist of integers and simple binary operators.
+Additionally, we want to support parenthesis and unary minus.
+For example:</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>1 + 2 * 3
+-(2 + 5) * 16
+</code></pre></div></div>
+
+<h2 id="grammar">Grammar</h2>
+<p>We start by defining our atoms, bits of self-contained syntax that cannot be split up into smaller parts.
+For our calculator we start with just simple integers:</p>
+<pre><code class="language-pest">// No whitespace allowed between digits
+integer = @{ ASCII_DIGIT+ }
+
+atom = _{ integer }
+</code></pre>
+
+<p>Next, our binary operators:</p>
+<pre><code class="language-pest">bin_op = _{ add | subtract | multiply | divide }
+	add = { "+" }
+	subtract = { "-" }
+	multiply = { "*" }
+	divide = { "/" }
+</code></pre>
+
+<p>These two rules will be the input to the
+<a href="https://docs.rs/pest/latest/pest/prec_climber/struct.PrecClimber.html"><code class="highlighter-rouge">PrecClimber</code></a>. 
+It expects to receive atoms separated by operators, like so: <code class="highlighter-rouge">atom, bin_op, atom, bin_op, atom, ...</code>.</p>
+
+<p>Corresponding to this format, we define our rule for expressions:</p>
+<pre><code class="language-pest">expr = { atom ~ (bin_op ~ atom)* }
+</code></pre>
+<p>This defines the grammar which generates the required input for the precedence climber.</p>
+
+<h2 id="abstract-syntax-tree">Abstract Syntax Tree</h2>
+<p>We want to convert our input into an abstract syntax tree.
+For this we define the following types:</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">#[derive(Debug)]</span>
+<span class="k">pub</span> <span class="k">enum</span> <span class="n">Expr</span> <span class="p">{</span>
+    <span class="nf">Integer</span><span class="p">(</span><span class="nb">i32</span><span class="p">),</span>
+    <span class="n">BinOp</span> <span class="p">{</span>
+        <span class="n">lhs</span><span class="p">:</span> <span class="nb">Box</span><span class="o">&lt;</span><span class="n">Expr</span><span class="o">&gt;</span><span class="p">,</span>
+        <span class="n">op</span><span class="p">:</span> <span class="n">Op</span><span class="p">,</span>
+        <span class="n">rhs</span><span class="p">:</span> <span class="nb">Box</span><span class="o">&lt;</span><span class="n">Expr</span><span class="o">&gt;</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">}</span>
+
+<span class="nd">#[derive(Debug)]</span>
+<span class="k">pub</span> <span class="k">enum</span> <span class="n">Op</span> <span class="p">{</span>
+    <span class="nb">Add</span><span class="p">,</span>
+    <span class="n">Subtract</span><span class="p">,</span>
+    <span class="n">Multiply</span><span class="p">,</span>
+    <span class="n">Divide</span><span class="p">,</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Note the <code class="highlighter-rouge">Box&lt;Expr&gt;</code> required because Rust 
+<a href="https://doc.rust-lang.org/book/ch15-01-box.html#enabling-recursive-types-with-boxes">does not allow unboxed recursive types</a>.</p>
+
+<p>There is no separate atom type, any atom is also a valid expression.</p>
+
+<h2 id="precedence-climber">Precedence climber</h2>
+<p>The precedence of operations is defined in the precedence climber.</p>
+
+<p>An easy approach is to define the precedence climber as global using <a href="https://docs.rs/lazy_static/1.4.0/lazy_static/"><code class="highlighter-rouge">lazy_static</code></a>.</p>
+
+<p>Adhering to standard rules of arithmetic, 
+we will define addition and subtraction to have lower priority than multiplication and division, 
+and make all operators left associative.</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nn">lazy_static</span><span class="p">::</span><span class="nd">lazy_static!</span> <span class="p">{</span>
+    <span class="k">static</span> <span class="k">ref</span> <span class="n">PREC_CLIMBER</span><span class="p">:</span> <span class="n">PrecClimber</span><span class="o">&lt;</span><span class="n">Rule</span><span class="o">&gt;</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="k">use</span> <span class="nn">pest</span><span class="p">::</span><span class="nn">prec_climber</span><span class="p">::{</span><span class="nn">Assoc</span><span class="p">::</span><span class="o">*</span><span class="p">,</span> <span class="n">Operator</span><span class="p">};</span>
+        <span class="k">use</span> <span class="nn">Rule</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+        <span class="c1">// Precedence is defined lowest to highest</span>
+        <span class="nn">PrecClimber</span><span class="p">::</span><span class="nf">new</span><span class="p">(</span><span class="nd">vec!</span><span class="p">[</span>
+            <span class="c1">// Addition and subtract have equal precedence</span>
+            <span class="nn">Operator</span><span class="p">::</span><span class="nf">new</span><span class="p">(</span><span class="n">add</span><span class="p">,</span> <span class="nb">Left</span><span class="p">)</span> <span class="p">|</span> <span class="nn">Operator</span><span class="p">::</span><span class="nf">new</span><span class="p">(</span><span class="n">subtract</span><span class="p">,</span> <span class="nb">Left</span><span class="p">),</span>   
+            <span class="nn">Operator</span><span class="p">::</span><span class="nf">new</span><span class="p">(</span><span class="n">multiply</span><span class="p">,</span> <span class="nb">Left</span><span class="p">)</span> <span class="p">|</span> <span class="nn">Operator</span><span class="p">::</span><span class="nf">new</span><span class="p">(</span><span class="n">divide</span><span class="p">,</span> <span class="nb">Left</span><span class="p">),</span>
+        <span class="p">])</span>
+    <span class="p">};</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>We are almost there, the only thing that’s left is to use our precedence climber.
+For this the <code class="highlighter-rouge">climb</code> function is used, it takes a vector of pairs and two functions.
+One function is executed for every primary (atom), and the infix function is executed for every binop with its new left 
+hand and right hand side according to the precedence rules defined earlier.
+In this example we create an AST in the precedence climber.</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">pub</span> <span class="k">fn</span> <span class="nf">parse_expr</span><span class="p">(</span><span class="n">pairs</span><span class="p">:</span> <span class="n">Pairs</span><span class="o">&lt;</span><span class="n">Rule</span><span class="o">&gt;</span><span class="p">)</span> <span class="k">-&gt;</span> <span class="n">Expr</span> <span class="p">{</span>
+    <span class="n">PREC_CLIMBER</span><span class="nf">.climb</span><span class="p">(</span>
+        <span class="n">pairs</span><span class="p">,</span>
+        <span class="p">|</span><span class="n">pair</span><span class="p">:</span> <span class="n">Pair</span><span class="o">&lt;</span><span class="n">Rule</span><span class="o">&gt;</span><span class="p">|</span> <span class="k">match</span> <span class="n">pair</span><span class="nf">.as_rule</span><span class="p">()</span> <span class="p">{</span>
+            <span class="nn">Rule</span><span class="p">::</span><span class="n">integer</span> <span class="k">=&gt;</span> <span class="nn">Expr</span><span class="p">::</span><span class="nf">Integer</span><span class="p">(</span><span class="n">pair</span><span class="nf">.as_str</span><span class="p">()</span><span class="py">.parse</span><span class="p">::</span><span class="o">&lt;</span><span class="nb">i32</span><span class="o">&gt;</span><span class="p">()</span><span class="nf">.unwrap</span><span class="p">()),</span>
+            <span class="n">rule</span> <span class="k">=&gt;</span> <span class="nd">unreachable!</span><span class="p">(</span><span class="s">"Expr::parse expected atom, found {:?}"</span><span class="p">,</span> <span class="n">rule</span><span class="p">)</span>
+        <span class="p">},</span>
+        <span class="p">|</span><span class="n">lhs</span><span class="p">:</span> <span class="n">Expr</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">Pair</span><span class="o">&lt;</span><span class="n">Rule</span><span class="o">&gt;</span><span class="p">,</span> <span class="n">rhs</span><span class="p">:</span> <span class="n">Expr</span><span class="p">|</span> <span class="p">{</span>
+            <span class="k">let</span> <span class="n">op</span> <span class="o">=</span> <span class="k">match</span> <span class="n">op</span><span class="nf">.as_rule</span><span class="p">()</span> <span class="p">{</span>
+                <span class="nn">Rule</span><span class="p">::</span><span class="n">add</span> <span class="k">=&gt;</span> <span class="nn">Op</span><span class="p">::</span><span class="nb">Add</span><span class="p">,</span>
+                <span class="nn">Rule</span><span class="p">::</span><span class="n">subtract</span> <span class="k">=&gt;</span> <span class="nn">Op</span><span class="p">::</span><span class="n">Subtract</span><span class="p">,</span>
+                <span class="nn">Rule</span><span class="p">::</span><span class="n">multiply</span> <span class="k">=&gt;</span> <span class="nn">Op</span><span class="p">::</span><span class="n">Multiply</span><span class="p">,</span>
+                <span class="nn">Rule</span><span class="p">::</span><span class="n">divide</span> <span class="k">=&gt;</span> <span class="nn">Op</span><span class="p">::</span><span class="n">Divide</span><span class="p">,</span>
+                <span class="n">rule</span> <span class="k">=&gt;</span> <span class="nd">unreachable!</span><span class="p">(</span><span class="s">"Expr::parse expected infix operation, found {:?}"</span><span class="p">,</span> <span class="n">rule</span><span class="p">),</span>
+            <span class="p">};</span>
+            <span class="nn">Expr</span><span class="p">::</span><span class="n">BinOp</span> <span class="p">{</span>
+                <span class="n">lhs</span><span class="p">:</span> <span class="nn">Box</span><span class="p">::</span><span class="nf">new</span><span class="p">(</span><span class="n">lhs</span><span class="p">),</span>
+                <span class="n">op</span><span class="p">,</span>
+                <span class="n">rhs</span><span class="p">:</span> <span class="nn">Box</span><span class="p">::</span><span class="nf">new</span><span class="p">(</span><span class="n">rhs</span><span class="p">),</span>
+            <span class="p">}</span>
+        <span class="p">})</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Here’s an example of how to use the parser.</p>
+
+<div class="language-rust highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">fn</span> <span class="nf">main</span><span class="p">()</span> <span class="k">-&gt;</span> <span class="nn">io</span><span class="p">::</span><span class="nb">Result</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span> <span class="p">{</span>
+    <span class="k">for</span> <span class="n">line</span> <span class="k">in</span> <span class="nn">io</span><span class="p">::</span><span class="nf">stdin</span><span class="p">()</span><span class="nf">.lock</span><span class="p">()</span><span class="nf">.lines</span><span class="p">()</span> <span class="p">{</span>
+        <span class="k">match</span> <span class="nn">CalculatorParser</span><span class="p">::</span><span class="nf">parse</span><span class="p">(</span><span class="nn">Rule</span><span class="p">::</span><span class="n">equation</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">line</span><span class="o">?</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nf">Ok</span><span class="p">(</span><span class="n">pairs</span><span class="p">)</span> <span class="k">=&gt;</span><span class="p">{</span>
+                <span class="nd">println!</span><span class="p">(</span><span class="s">"Parsed: {:#?}"</span><span class="p">,</span> <span class="nf">parse_expr</span><span class="p">(</span><span class="n">pairs</span><span class="p">));</span>
+            <span class="p">}</span>
+            <span class="nf">Err</span><span class="p">(</span><span class="n">e</span><span class="p">)</span> <span class="k">=&gt;</span> <span class="p">{</span>
+                <span class="nd">eprintln!</span><span class="p">(</span><span class="s">"Parse failed: {:?}"</span><span class="p">,</span> <span class="n">e</span><span class="p">);</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+    <span class="nf">Ok</span><span class="p">(())</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>With this we can parse the following simple equation:</p>
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>&gt; 1 * 2 + 3 / 4
+Parsed: BinOp {
+    lhs: BinOp {
+        lhs: Integer( 1 ),
+        op: Multiply,
+        rhs: Integer( 2 ),
+    },
+    op: Add,
+    rhs: BinOp {
+        lhs: Integer( 3 ),
+        op: Divide,
+        rhs: Integer( 4 ),
+    },
+}
+</code></pre></div></div>
+
+<h2 id="unary-minus-and-parenthesis">Unary minus and parenthesis</h2>
+<p>So far our calculator can parse fairly complicated expressions, but it will fail if it encounters explicit parentheses 
+or a unary minus sign. Let’s fix that.</p>
+
+<h3 id="parentheses">Parentheses</h3>
+<p>Consider the expression <code class="highlighter-rouge">(1 + 2) * 3</code>. Clearly removing the parentheses would give a different result, so we must 
+support parsing such expressions. Luckily, this can be a simple addition to our <code class="highlighter-rouge">atom</code> rule:</p>
+
+<div class="language-diff highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="gd">- atom = _{ integer }
+</span><span class="gi">+ atom = _{ integer | "(" ~ expr ~ ")" }
+</span></code></pre></div></div>
+
+<p>Earlier we said that atoms should be simple token sequences that cannot be split up further, but now an atom can contain
+arbitrary expressions! The reason we are okay with this is that the parentheses mark clear boundaries for the 
+expression, it will not make ambiguous what operators belong to the inner expression and which to the outer one.</p>
+
+<h3 id="unary-minus">Unary minus</h3>
+<p>We can currently only parse positive integers, eg <code class="highlighter-rouge">16</code> or <code class="highlighter-rouge">2342</code>. But we also want to do calculations with negative intergers.
+To do this we introduce the unary minus, so we can make <code class="highlighter-rouge">-4</code> and <code class="highlighter-rouge">-(8 + 15)</code>.
+We need the following change to grammar:</p>
+<div class="language-diff highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="gi">+ unary_minus = { "-" ~ atom }
+</span><span class="gd">- atom = _{ integer | "(" ~ expr ~ ")" }
+</span><span class="gi">+ atom = _{ integer | unary_minus | "(" ~ expr ~ ")" }
+</span></code></pre></div></div>
+
+<p>For these last changes we’ve omitted the small changes to the AST and parsing logic. You can find all these details in 
+the repository: https://github.com/wildarch/pest-calculator.</p>
+
+<p>For questions or suggestions, please feel free to open an issues or submit a PR!</p>
+
+  </div>
+
+  
+
+</article>
+
+      </div>
+    </main>
+
+    <footer class="site-footer">
+
+  <div class="wrapper">
+
+    <p>
+      
+
+&copy;  - Powered by <a href="https://jekyllrb.com">Jekyll</a> &amp; <a href="https://github.com/yous/whiteglass">whiteglass</a> - Subscribe via <a href="https://nouwaarom.com/feed.xml">RSS</a>
+
+    </p>
+
+  </div>
+
+</footer>
+
+
+  </body>
+
+</html>
